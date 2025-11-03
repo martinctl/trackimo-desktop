@@ -1,6 +1,8 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::fs;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockfileData {
@@ -11,16 +13,132 @@ pub struct LockfileData {
     pub protocol: String,
 }
 
-/// Retrieves LCU credentials by querying the process list
-/// This method is more reliable than reading the lockfile as it doesn't require
-/// knowing the installation directory
+/// Retrieves LCU credentials, trying lockfile first (fast), then falling back to process list
 pub fn read_lockfile() -> Result<LockfileData, String> {
+    // First, try to read from lockfile (fastest method)
+    if let Ok(data) = read_lockfile_from_path() {
+        return Ok(data);
+    }
+
+    // Fallback to process list method
     let commandline = get_process_commandline()?;
     extract_credentials(&commandline)
 }
 
+/// Try to read lockfile from common installation paths
+fn read_lockfile_from_path() -> Result<LockfileData, String> {
+    let lockfile_paths = get_lockfile_paths();
+
+    for path in lockfile_paths {
+        if let Ok(data) = try_read_lockfile(&path) {
+            return Ok(data);
+        }
+    }
+
+    Err("Lockfile not found in common locations".to_string())
+}
+
+/// Get common lockfile paths based on platform
+fn get_lockfile_paths() -> Vec<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut paths = Vec::new();
+        
+        // Common Windows installation paths
+        if let Ok(program_files) = std::env::var("ProgramFiles") {
+            paths.push(PathBuf::from(format!(
+                "{}\\Riot Games\\League of Legends\\lockfile",
+                program_files
+            )));
+        }
+        if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
+            paths.push(PathBuf::from(format!(
+                "{}\\Riot Games\\League of Legends\\lockfile",
+                program_files_x86
+            )));
+        }
+        
+        // User's local app data (for some installations)
+        if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+            paths.push(PathBuf::from(format!(
+                "{}\\Riot Games\\League of Legends\\lockfile",
+                local_appdata
+            )));
+        }
+        
+        paths
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        vec![
+            PathBuf::from("/Applications/League of Legends.app/Contents/LoL/lockfile"),
+            PathBuf::from("/Applications/League of Legends.app/Contents/LoL/LeagueClient.app/Contents/Lockups/lockfile"),
+            PathBuf::from("~/Library/Application Support/League of Legends/lockfile"),
+        ]
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        vec![
+            PathBuf::from("~/.wine/drive_c/Riot Games/League of Legends/lockfile"),
+            PathBuf::from("~/.local/share/Riot Games/League of Legends/lockfile"),
+        ]
+    }
+}
+
+/// Try to read and parse lockfile from a specific path
+fn try_read_lockfile(path: &PathBuf) -> Result<LockfileData, String> {
+    let expanded_path = path
+        .to_string_lossy()
+        .replace("~", &std::env::var("HOME").unwrap_or_default());
+    let path_buf = PathBuf::from(&expanded_path);
+
+    if !path_buf.exists() {
+        return Err("Path does not exist".to_string());
+    }
+
+    let contents = fs::read_to_string(&path_buf)
+        .map_err(|e| format!("Failed to read lockfile: {}", e))?;
+
+    parse_lockfile_contents(&contents)
+}
+
+/// Parse lockfile contents (format: "Process Name : PID : Port : Password : Protocol")
+fn parse_lockfile_contents(contents: &str) -> Result<LockfileData, String> {
+    let line = contents.lines().next().ok_or("Lockfile is empty")?;
+    let parts: Vec<&str> = line.split(':').collect();
+
+    if parts.len() < 5 {
+        return Err("Invalid lockfile format".to_string());
+    }
+
+    let process_name = parts[0].to_string();
+    let process_id = parts[1]
+        .parse::<u32>()
+        .map_err(|e| format!("Failed to parse process ID: {}", e))?;
+    let port = parts[2]
+        .parse::<u16>()
+        .map_err(|e| format!("Failed to parse port: {}", e))?;
+    let password = parts[3].to_string();
+    let protocol = parts[4].trim().to_string();
+
+    Ok(LockfileData {
+        process_name,
+        process_id,
+        port,
+        password,
+        protocol,
+    })
+}
+
 #[cfg(target_os = "windows")]
 fn get_process_commandline() -> Result<String, String> {
+    use std::os::windows::process::CommandExt;
+    
+    // CREATE_NO_WINDOW flag (0x08000000) to prevent console window from appearing
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    
     let output = Command::new("wmic")
         .args([
             "PROCESS",
@@ -29,6 +147,9 @@ fn get_process_commandline() -> Result<String, String> {
             "GET",
             "commandline",
         ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("Failed to execute wmic command: {}", e))?;
 
@@ -61,21 +182,19 @@ fn get_process_commandline() -> Result<String, String> {
 
 #[cfg(target_os = "macos")]
 fn get_process_commandline() -> Result<String, String> {
-    let output = Command::new("ps")
-        .args(["-A"])
+    // Use ps with grep to be more efficient - only get LeagueClientUx processes
+    // Note: grep returns non-zero exit code when no matches found, so we check stdout instead
+    let output = Command::new("sh")
+        .args(["-c", "ps -A | grep LeagueClientUx | grep -v grep"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
         .map_err(|e| format!("Failed to execute ps command: {}", e))?;
 
-    if !output.status.success() {
-        return Err("ps command failed.".to_string());
-    }
-
     let output_str = String::from_utf8_lossy(&output.stdout);
-
-    // Filter lines containing LeagueClientUx
     let lines: Vec<&str> = output_str
         .lines()
-        .filter(|line| line.contains("LeagueClientUx"))
+        .filter(|line| !line.trim().is_empty())
         .collect();
 
     if lines.is_empty() {
@@ -85,29 +204,25 @@ fn get_process_commandline() -> Result<String, String> {
         );
     }
 
-    // Take the first matching line and extract everything after the process name
-    // Format is typically: "PID TTY TIME CMD ... full command line ..."
-    let line = lines[0];
-    Ok(line.to_string())
+    // Take the first matching line
+    Ok(lines[0].to_string())
 }
 
 #[cfg(target_os = "linux")]
 fn get_process_commandline() -> Result<String, String> {
-    let output = Command::new("ps")
-        .args(["-A", "-o", "args="])
+    // Use ps with grep to be more efficient
+    // Note: grep returns non-zero exit code when no matches found, so we check stdout instead
+    let output = Command::new("sh")
+        .args(["-c", "ps -A -o args= | grep LeagueClientUx | grep -v grep"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
         .map_err(|e| format!("Failed to execute ps command: {}", e))?;
 
-    if !output.status.success() {
-        return Err("ps command failed.".to_string());
-    }
-
     let output_str = String::from_utf8_lossy(&output.stdout);
-
-    // Filter lines containing LeagueClientUx
     let lines: Vec<&str> = output_str
         .lines()
-        .filter(|line| line.contains("LeagueClientUx"))
+        .filter(|line| !line.trim().is_empty())
         .collect();
 
     if lines.is_empty() {
