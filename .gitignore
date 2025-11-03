@@ -16,6 +16,8 @@ build
 # Tauri
 src-tauri/target
 src-tauri/Cargo.lock
+src-tauri/gen
+src-tauri/target/flycheck0
 
 # Rust analyzer (language server temporary files)
 target/

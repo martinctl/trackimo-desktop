@@ -7,25 +7,24 @@ mod lcu;
 use champions::cache::ChampionCache;
 use lcu::client::LcuClient;
 use std::sync::Arc;
-use tokio::sync::Mutex as TokioMutex;
 use tauri::Manager;
+use tokio::sync::Mutex as TokioMutex;
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             #[cfg(debug_assertions)]
             {
-                let window = app.get_window("main").unwrap();
+                let window = app.get_webview_window("main").unwrap();
                 window.open_devtools();
             }
-            
+
             // Try to load champion data from cache on startup
             if let Ok(cache_guard) = app.state::<std::sync::Mutex<ChampionCache>>().try_lock() {
-                if let Ok(Some(_)) = cache_guard.load_from_cache() {
-                    // Cache loaded successfully
-                }
+                let _ = cache_guard.load_from_cache();
             }
-            
+
             Ok(())
         })
         .manage(Arc::new(TokioMutex::new(LcuClient::new())))
@@ -49,4 +48,3 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

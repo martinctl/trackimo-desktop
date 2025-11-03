@@ -1,0 +1,13 @@
+{
+  "identifier": "app-capabilities",
+  "description": "Main application capabilities and permissions",
+  "local": true,
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "shell:default"
+  ]
+}

@@ -13,7 +13,7 @@ impl ChampionCache {
         let cache_dir = dirs::cache_dir()
             .ok_or_else(|| "Failed to get cache directory".to_string())?
             .join("trackimo-desktop");
-        
+
         fs::create_dir_all(&cache_dir)
             .map_err(|e| format!("Failed to create cache directory: {}", e))?;
 
@@ -33,8 +33,8 @@ impl ChampionCache {
         let contents = fs::read_to_string(&self.cache_path)
             .map_err(|e| format!("Failed to read cache: {}", e))?;
 
-        let data: ChampionData = serde_json::from_str(&contents)
-            .map_err(|e| format!("Failed to parse cache: {}", e))?;
+        let data: ChampionData =
+            serde_json::from_str(&contents).map_err(|e| format!("Failed to parse cache: {}", e))?;
 
         Ok(Some(data))
     }
@@ -43,8 +43,7 @@ impl ChampionCache {
         let json = serde_json::to_string_pretty(data)
             .map_err(|e| format!("Failed to serialize data: {}", e))?;
 
-        fs::write(&self.cache_path, json)
-            .map_err(|e| format!("Failed to write cache: {}", e))?;
+        fs::write(&self.cache_path, json).map_err(|e| format!("Failed to write cache: {}", e))?;
 
         Ok(())
     }
@@ -59,7 +58,7 @@ impl ChampionCache {
     pub fn get_champion_by_id(&self, id: i64) -> Option<Champion> {
         let guard = self.data.lock().ok()?;
         let data = guard.as_ref()?;
-        
+
         data.champions
             .values()
             .find(|champ| champ.key == id)

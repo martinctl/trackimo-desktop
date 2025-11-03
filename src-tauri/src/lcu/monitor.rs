@@ -1,6 +1,6 @@
-use crate::lcu::{draft::DraftState, client::LcuClient};
+use crate::lcu::{client::LcuClient, draft::DraftState};
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::{interval, Duration};
 
 pub struct DraftMonitor {
@@ -35,7 +35,7 @@ impl DraftMonitor {
                     if let Ok(state_json) = serde_json::to_string(&state) {
                         if last_state.as_ref() != Some(&state_json) {
                             // State changed, emit event
-                            if let Some(window) = self.app_handle.get_window("main") {
+                            if let Some(window) = self.app_handle.get_webview_window("main") {
                                 let _ = window.emit("draft-state-changed", &state);
                             }
                             last_state = Some(state_json);
@@ -45,7 +45,7 @@ impl DraftMonitor {
                 Err(e) => {
                     // Only emit error if we had a previous state (to avoid spam when not in draft)
                     if last_state.is_some() {
-                        if let Some(window) = self.app_handle.get_window("main") {
+                        if let Some(window) = self.app_handle.get_webview_window("main") {
                             let _ = window.emit("draft-error", &e);
                         }
                     }
@@ -56,11 +56,8 @@ impl DraftMonitor {
     }
 
     async fn get_current_state(&self) -> Result<DraftState, String> {
-        let result = {
-            let mut client_guard = self.client.lock().await;
-            client_guard.get_draft_state().await
-        };
-        result
+        let mut client_guard = self.client.lock().await;
+        client_guard.get_draft_state().await
     }
 }
 
@@ -79,4 +76,3 @@ pub async fn start_draft_monitoring(
 
     Ok(())
 }
-

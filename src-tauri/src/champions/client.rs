@@ -18,14 +18,14 @@ where
     D: serde::Deserializer<'de>,
 {
     use serde::Deserialize;
-    
+
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Key {
         String(String),
         Number(i64),
     }
-    
+
     match Key::deserialize(deserializer)? {
         Key::String(s) => s.parse().map_err(serde::de::Error::custom),
         Key::Number(n) => Ok(n),
@@ -80,10 +80,7 @@ impl RiotApiClient {
             .ok_or_else(|| "No versions available".to_string())?;
 
         // Fetch champion data
-        let champions_url = format!(
-            "{}/{}/data/en_US/champion.json",
-            self.base_url, version
-        );
+        let champions_url = format!("{}/{}/data/en_US/champion.json", self.base_url, version);
 
         // We need to manually deserialize because Champion.key can be string or number
         let json_value: serde_json::Value = self
@@ -119,11 +116,10 @@ pub async fn fetch_champion_data(
 ) -> Result<ChampionData, String> {
     let client = RiotApiClient::new(api_key);
     let data = client.fetch_champion_data().await?;
-    
+
     // Save to cache
     let cache_guard = cache.lock().map_err(|e| format!("Lock error: {}", e))?;
     cache_guard.set_data(data.clone())?;
-    
+
     Ok(data)
 }
-

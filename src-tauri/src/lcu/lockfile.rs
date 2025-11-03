@@ -1,6 +1,6 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
-use regex::Regex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockfileData {
@@ -22,7 +22,7 @@ pub fn read_lockfile() -> Result<LockfileData, String> {
 #[cfg(target_os = "windows")]
 fn get_process_commandline() -> Result<String, String> {
     let output = Command::new("wmic")
-        .args(&[
+        .args([
             "PROCESS",
             "WHERE",
             "name='LeagueClientUx.exe'",
@@ -33,11 +33,13 @@ fn get_process_commandline() -> Result<String, String> {
         .map_err(|e| format!("Failed to execute wmic command: {}", e))?;
 
     if !output.status.success() {
-        return Err("wmic command failed. Make sure League of Legends client is running.".to_string());
+        return Err(
+            "wmic command failed. Make sure League of Legends client is running.".to_string(),
+        );
     }
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    
+
     // Filter out empty lines and the "CommandLine" header
     let lines: Vec<&str> = output_str
         .lines()
@@ -48,7 +50,10 @@ fn get_process_commandline() -> Result<String, String> {
         .collect();
 
     if lines.is_empty() {
-        return Err("LeagueClientUx.exe process not found. Make sure League of Legends client is running.".to_string());
+        return Err(
+            "LeagueClientUx.exe process not found. Make sure League of Legends client is running."
+                .to_string(),
+        );
     }
 
     Ok(lines.join(" "))
@@ -57,7 +62,7 @@ fn get_process_commandline() -> Result<String, String> {
 #[cfg(target_os = "macos")]
 fn get_process_commandline() -> Result<String, String> {
     let output = Command::new("ps")
-        .args(&["-A"])
+        .args(["-A"])
         .output()
         .map_err(|e| format!("Failed to execute ps command: {}", e))?;
 
@@ -66,7 +71,7 @@ fn get_process_commandline() -> Result<String, String> {
     }
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    
+
     // Filter lines containing LeagueClientUx
     let lines: Vec<&str> = output_str
         .lines()
@@ -74,7 +79,10 @@ fn get_process_commandline() -> Result<String, String> {
         .collect();
 
     if lines.is_empty() {
-        return Err("LeagueClientUx process not found. Make sure League of Legends client is running.".to_string());
+        return Err(
+            "LeagueClientUx process not found. Make sure League of Legends client is running."
+                .to_string(),
+        );
     }
 
     // Take the first matching line and extract everything after the process name
@@ -86,7 +94,7 @@ fn get_process_commandline() -> Result<String, String> {
 #[cfg(target_os = "linux")]
 fn get_process_commandline() -> Result<String, String> {
     let output = Command::new("ps")
-        .args(&["-A", "-o", "args="])
+        .args(["-A", "-o", "args="])
         .output()
         .map_err(|e| format!("Failed to execute ps command: {}", e))?;
 
@@ -95,7 +103,7 @@ fn get_process_commandline() -> Result<String, String> {
     }
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    
+
     // Filter lines containing LeagueClientUx
     let lines: Vec<&str> = output_str
         .lines()
@@ -103,7 +111,10 @@ fn get_process_commandline() -> Result<String, String> {
         .collect();
 
     if lines.is_empty() {
-        return Err("LeagueClientUx process not found. Make sure League of Legends client is running.".to_string());
+        return Err(
+            "LeagueClientUx process not found. Make sure League of Legends client is running."
+                .to_string(),
+        );
     }
 
     Ok(lines[0].to_string())
@@ -113,7 +124,7 @@ fn extract_credentials(commandline: &str) -> Result<LockfileData, String> {
     // Regex patterns to extract port and password (auth token)
     let port_regex = Regex::new(r"--app-port=([0-9]+)")
         .map_err(|e| format!("Failed to compile port regex: {}", e))?;
-    
+
     let password_regex = Regex::new(r"--remoting-auth-token=([\w-]+)")
         .map_err(|e| format!("Failed to compile password regex: {}", e))?;
 
@@ -137,7 +148,7 @@ fn extract_credentials(commandline: &str) -> Result<LockfileData, String> {
     // Protocol is always https for LCU API
     let protocol = "https".to_string();
     let process_name = "LeagueClient".to_string();
-    
+
     // Try to extract process ID if available (optional)
     let process_id = extract_process_id(commandline).unwrap_or(0);
 
@@ -161,7 +172,7 @@ fn extract_process_id(_commandline: &str) -> Option<u32> {
 fn extract_process_id(commandline: &str) -> Option<u32> {
     // On macOS/Linux, ps output typically starts with PID
     // Try to extract it from the beginning of the line
-    let parts: Vec<&str> = commandline.trim().split_whitespace().collect();
+    let parts: Vec<&str> = commandline.split_whitespace().collect();
     if !parts.is_empty() {
         parts[0].parse::<u32>().ok()
     } else {
@@ -177,7 +188,7 @@ mod tests {
     fn test_extract_credentials() {
         let commandline = r#"LeagueClientUx.exe --app-port=54321 --remoting-auth-token=abc123def456 --some-other-arg"#;
         let result = extract_credentials(commandline).unwrap();
-        
+
         assert_eq!(result.port, 54321);
         assert_eq!(result.password, "abc123def456");
         assert_eq!(result.protocol, "https");
@@ -188,7 +199,7 @@ mod tests {
     fn test_extract_credentials_macos_format() {
         let commandline = r#"12345 ttys000  0:00.00 /Applications/League of Legends.app/Contents/LoL/Riot Games/League of Legends.app/Contents/MacOS/LeagueClientUx --app-port=54321 --remoting-auth-token=xyz789token --other-args"#;
         let result = extract_credentials(commandline).unwrap();
-        
+
         assert_eq!(result.port, 54321);
         assert_eq!(result.password, "xyz789token");
         assert_eq!(result.protocol, "https");
