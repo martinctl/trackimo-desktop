@@ -20,6 +20,7 @@ function App() {
   const [matchHistory, setMatchHistory] = useState<MatchHistoryGame[]>([]);
   const draftStateRef = useRef<DraftState | null>(null);
   const monitoringStartedRef = useRef(false);
+  const previousConnectedRef = useRef(false);
 
   useEffect(() => {
     const initialize = async () => {
@@ -87,7 +88,8 @@ function App() {
     }
   };
 
-  const fetchPlayerInfo = async () => {
+  const fetchPlayerInfo = async (retryCount = 0): Promise<boolean> => {
+    const maxRetries = 3;
     try {
       const summoner: SummonerInfo = await invoke("get_current_summoner");
       setSummonerInfo(summoner);
@@ -101,21 +103,44 @@ function App() {
       } catch {
         setMatchHistory([]);
       }
-    } catch {
-      // Failed to fetch player info
+      return true;
+    } catch (error) {
+      // Failed to fetch player info - retry if we haven't exceeded max retries
+      if (retryCount < maxRetries) {
+        // Wait a bit before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return fetchPlayerInfo(retryCount + 1);
+      }
+      // Clear data on final failure
+      setSummonerInfo(null);
+      setRankedStats([]);
+      setMatchHistory([]);
+      return false;
     }
   };
 
   const autoConnect = async () => {
     try {
       const status: ConnectionStatus = await invoke("test_connection");
+      const wasConnected = previousConnectedRef.current;
+      previousConnectedRef.current = status.connected;
       setConnectionStatus(status);
       
-      if (status.connected && !monitoringStartedRef.current) {
-        await invoke("start_draft_monitoring");
-        monitoringStartedRef.current = true;
-        await fetchPlayerInfo();
-      } else if (!status.connected) {
+      if (status.connected) {
+        // Start monitoring if not already started
+        if (!monitoringStartedRef.current) {
+          await invoke("start_draft_monitoring");
+          monitoringStartedRef.current = true;
+        }
+        
+        // Fetch player info if we just connected or if we don't have data yet
+        if (!wasConnected || !summonerInfo) {
+          // Small delay to ensure League API is fully ready
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await fetchPlayerInfo();
+        }
+      } else {
+        // Disconnected - clear monitoring and data
         monitoringStartedRef.current = false;
         setSummonerInfo(null);
         setRankedStats([]);
@@ -123,6 +148,7 @@ function App() {
       }
     } catch (error) {
       setConnectionStatus({ connected: false, error: String(error) });
+      previousConnectedRef.current = false;
       monitoringStartedRef.current = false;
       setSummonerInfo(null);
       setRankedStats([]);

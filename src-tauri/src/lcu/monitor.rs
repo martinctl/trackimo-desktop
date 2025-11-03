@@ -1,14 +1,7 @@
 use crate::lcu::{draft::DraftState, client::LcuClient};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tokio::time::{interval, Duration};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DraftEvent {
-    StateChanged(DraftState),
-    Error(String),
-}
 
 pub struct DraftMonitor {
     client: Arc<tokio::sync::Mutex<LcuClient>>,

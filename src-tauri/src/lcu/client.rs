@@ -64,6 +64,7 @@ impl LcuClient {
         }
     }
 
+    /// Get LCU credentials, always tries to fetch fresh credentials if not cached
     pub fn get_lockfile(&mut self) -> Result<&LockfileData, String> {
         if self.lockfile_data.is_none() {
             self.lockfile_data = Some(read_lockfile()?);
@@ -71,7 +72,15 @@ impl LcuClient {
         Ok(self.lockfile_data.as_ref().unwrap())
     }
 
+    /// Clear cached credentials (useful when League client restarts)
+    pub fn clear_credentials(&mut self) {
+        self.lockfile_data = None;
+    }
+
     pub async fn test_connection(&mut self) -> ConnectionStatus {
+        // Clear credentials first to force a fresh check
+        self.clear_credentials();
+        
         match self.get_lockfile() {
             Ok(_) => {
                 match self.get_gameflow_phase().await {
@@ -93,6 +102,19 @@ impl LcuClient {
     }
 
     pub async fn get_gameflow_phase(&mut self) -> Result<String, String> {
+        // Try with current credentials, refresh if connection fails
+        let result = self.try_get_gameflow_phase().await;
+        
+        // If we got a connection error, try refreshing credentials once
+        if result.is_err() {
+            self.clear_credentials();
+            return self.try_get_gameflow_phase().await;
+        }
+        
+        result
+    }
+
+    async fn try_get_gameflow_phase(&mut self) -> Result<String, String> {
         let protocol;
         let port;
         let password;
@@ -126,6 +148,19 @@ impl LcuClient {
     }
 
     pub async fn get_draft_session(&mut self) -> Result<serde_json::Value, String> {
+        // Try with current credentials, refresh if connection fails
+        let result = self.try_get_draft_session().await;
+        
+        // If we got a connection error, try refreshing credentials once
+        if result.is_err() {
+            self.clear_credentials();
+            return self.try_get_draft_session().await;
+        }
+        
+        result
+    }
+
+    async fn try_get_draft_session(&mut self) -> Result<serde_json::Value, String> {
         let protocol;
         let port;
         let password;
@@ -164,6 +199,19 @@ impl LcuClient {
     }
 
     pub async fn get_current_summoner(&mut self) -> Result<SummonerInfo, String> {
+        // Try with current credentials, refresh if connection fails
+        let result = self.try_get_current_summoner().await;
+        
+        // If we got a connection error, try refreshing credentials once
+        if result.is_err() {
+            self.clear_credentials();
+            return self.try_get_current_summoner().await;
+        }
+        
+        result
+    }
+
+    async fn try_get_current_summoner(&mut self) -> Result<SummonerInfo, String> {
         let protocol;
         let port;
         let password;
@@ -206,6 +254,19 @@ impl LcuClient {
     }
 
     pub async fn get_ranked_stats(&mut self) -> Result<Vec<RankedStats>, String> {
+        // Try with current credentials, refresh if connection fails
+        let result = self.try_get_ranked_stats().await;
+        
+        // If we got a connection error, try refreshing credentials once
+        if result.is_err() {
+            self.clear_credentials();
+            return self.try_get_ranked_stats().await;
+        }
+        
+        result
+    }
+
+    async fn try_get_ranked_stats(&mut self) -> Result<Vec<RankedStats>, String> {
         let protocol;
         let port;
         let password;
@@ -259,6 +320,19 @@ impl LcuClient {
     }
 
     pub async fn get_match_history(&mut self) -> Result<Vec<MatchHistoryGame>, String> {
+        // Try with current credentials, refresh if connection fails
+        let result = self.try_get_match_history().await;
+        
+        // If we got a connection error, try refreshing credentials once
+        if result.is_err() {
+            self.clear_credentials();
+            return self.try_get_match_history().await;
+        }
+        
+        result
+    }
+
+    async fn try_get_match_history(&mut self) -> Result<Vec<MatchHistoryGame>, String> {
         // Get summoner PUUID first
         let summoner = self.get_current_summoner().await?;
         let puuid = summoner.puuid;

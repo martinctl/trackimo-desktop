@@ -1,6 +1,6 @@
-use std::fs;
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::process::Command;
+use regex::Regex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockfileData {
@@ -11,84 +11,135 @@ pub struct LockfileData {
     pub protocol: String,
 }
 
-pub fn get_lockfile_paths() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    
-    // Primary location: %LOCALAPPDATA%\Riot Games\League of Legends\lockfile
-    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-        paths.push(
-            PathBuf::from(&local_app_data)
-                .join("Riot Games")
-                .join("League of Legends")
-                .join("lockfile")
-        );
-        
-        // Also try with Riot Client subfolder (newer client versions)
-        paths.push(
-            PathBuf::from(&local_app_data)
-                .join("Riot Games")
-                .join("Riot Client")
-                .join("lockfile")
-        );
-    }
-    
-    // Alternative: Check common installation paths
-    let program_files_paths = vec![
-        "C:\\Riot Games\\League of Legends\\lockfile",
-        "C:\\Program Files\\Riot Games\\League of Legends\\lockfile",
-        "C:\\Program Files (x86)\\Riot Games\\League of Legends\\lockfile",
-    ];
-    
-    for path_str in program_files_paths {
-        paths.push(PathBuf::from(path_str));
-    }
-    
-    paths
-}
-
+/// Retrieves LCU credentials by querying the process list
+/// This method is more reliable than reading the lockfile as it doesn't require
+/// knowing the installation directory
 pub fn read_lockfile() -> Result<LockfileData, String> {
-    let paths = get_lockfile_paths();
-    let mut errors = Vec::new();
-    
-    for lockfile_path in paths {
-        if lockfile_path.exists() {
-            match fs::read_to_string(&lockfile_path) {
-                Ok(contents) => return parse_lockfile(&contents),
-                Err(e) => {
-                    errors.push(format!("Failed to read {}: {}", lockfile_path.display(), e));
-                }
-            }
-        } else {
-            errors.push(format!("Not found: {}", lockfile_path.display()));
-        }
-    }
-    
-    Err(format!(
-        "Lockfile not found in any of the checked locations:\n{}\n\nMake sure League of Legends client is running.",
-        errors.join("\n")
-    ))
+    let commandline = get_process_commandline()?;
+    extract_credentials(&commandline)
 }
 
-pub fn parse_lockfile(contents: &str) -> Result<LockfileData, String> {
-    // Lockfile format: "PROCESS_NAME:PROCESS_ID:PORT:PASSWORD:PROTOCOL"
-    let parts: Vec<&str> = contents.trim().split(':').collect();
-    
-    if parts.len() != 5 {
-        return Err(format!(
-            "Invalid lockfile format. Expected 5 parts, got {}",
-            parts.len()
-        ));
+#[cfg(target_os = "windows")]
+fn get_process_commandline() -> Result<String, String> {
+    let output = Command::new("wmic")
+        .args(&[
+            "PROCESS",
+            "WHERE",
+            "name='LeagueClientUx.exe'",
+            "GET",
+            "commandline",
+        ])
+        .output()
+        .map_err(|e| format!("Failed to execute wmic command: {}", e))?;
+
+    if !output.status.success() {
+        return Err("wmic command failed. Make sure League of Legends client is running.".to_string());
     }
 
-    let process_name = parts[0].to_string();
-    let process_id = parts[1]
-        .parse::<u32>()
-        .map_err(|e| format!("Failed to parse process ID: {}", e))?;
-    let port = parts[2]
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    
+    // Filter out empty lines and the "CommandLine" header
+    let lines: Vec<&str> = output_str
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            !trimmed.is_empty() && trimmed != "CommandLine"
+        })
+        .collect();
+
+    if lines.is_empty() {
+        return Err("LeagueClientUx.exe process not found. Make sure League of Legends client is running.".to_string());
+    }
+
+    Ok(lines.join(" "))
+}
+
+#[cfg(target_os = "macos")]
+fn get_process_commandline() -> Result<String, String> {
+    let output = Command::new("ps")
+        .args(&["-A"])
+        .output()
+        .map_err(|e| format!("Failed to execute ps command: {}", e))?;
+
+    if !output.status.success() {
+        return Err("ps command failed.".to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    
+    // Filter lines containing LeagueClientUx
+    let lines: Vec<&str> = output_str
+        .lines()
+        .filter(|line| line.contains("LeagueClientUx"))
+        .collect();
+
+    if lines.is_empty() {
+        return Err("LeagueClientUx process not found. Make sure League of Legends client is running.".to_string());
+    }
+
+    // Take the first matching line and extract everything after the process name
+    // Format is typically: "PID TTY TIME CMD ... full command line ..."
+    let line = lines[0];
+    Ok(line.to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn get_process_commandline() -> Result<String, String> {
+    let output = Command::new("ps")
+        .args(&["-A", "-o", "args="])
+        .output()
+        .map_err(|e| format!("Failed to execute ps command: {}", e))?;
+
+    if !output.status.success() {
+        return Err("ps command failed.".to_string());
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    
+    // Filter lines containing LeagueClientUx
+    let lines: Vec<&str> = output_str
+        .lines()
+        .filter(|line| line.contains("LeagueClientUx"))
+        .collect();
+
+    if lines.is_empty() {
+        return Err("LeagueClientUx process not found. Make sure League of Legends client is running.".to_string());
+    }
+
+    Ok(lines[0].to_string())
+}
+
+fn extract_credentials(commandline: &str) -> Result<LockfileData, String> {
+    // Regex patterns to extract port and password (auth token)
+    let port_regex = Regex::new(r"--app-port=([0-9]+)")
+        .map_err(|e| format!("Failed to compile port regex: {}", e))?;
+    
+    let password_regex = Regex::new(r"--remoting-auth-token=([\w-]+)")
+        .map_err(|e| format!("Failed to compile password regex: {}", e))?;
+
+    // Extract port
+    let port = port_regex
+        .captures(commandline)
+        .and_then(|cap| cap.get(1))
+        .ok_or_else(|| "Could not find --app-port in process commandline".to_string())?
+        .as_str()
         .parse::<u16>()
-        .map_err(|e| format!("Failed to parse port: {}", e))?;
-    let password = parts[3].to_string();
-    let protocol = parts[4].to_string();
+        .map_err(|e| format!("Failed to parse port number: {}", e))?;
+
+    // Extract password (auth token)
+    let password = password_regex
+        .captures(commandline)
+        .and_then(|cap| cap.get(1))
+        .ok_or_else(|| "Could not find --remoting-auth-token in process commandline".to_string())?
+        .as_str()
+        .to_string();
+
+    // Protocol is always https for LCU API
+    let protocol = "https".to_string();
+    let process_name = "LeagueClient".to_string();
+    
+    // Try to extract process ID if available (optional)
+    let process_id = extract_process_id(commandline).unwrap_or(0);
 
     Ok(LockfileData {
         process_name,
@@ -99,20 +150,47 @@ pub fn parse_lockfile(contents: &str) -> Result<LockfileData, String> {
     })
 }
 
+#[cfg(target_os = "windows")]
+fn extract_process_id(_commandline: &str) -> Option<u32> {
+    // On Windows, wmic doesn't include PID in the commandline output by default
+    // We could parse it from the output, but it's not critical for functionality
+    None
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn extract_process_id(commandline: &str) -> Option<u32> {
+    // On macOS/Linux, ps output typically starts with PID
+    // Try to extract it from the beginning of the line
+    let parts: Vec<&str> = commandline.trim().split_whitespace().collect();
+    if !parts.is_empty() {
+        parts[0].parse::<u32>().ok()
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_lockfile() {
-        let contents = "LeagueClient:12345:54321:password:https";
-        let result = parse_lockfile(contents).unwrap();
+    fn test_extract_credentials() {
+        let commandline = r#"LeagueClientUx.exe --app-port=54321 --remoting-auth-token=abc123def456 --some-other-arg"#;
+        let result = extract_credentials(commandline).unwrap();
         
-        assert_eq!(result.process_name, "LeagueClient");
-        assert_eq!(result.process_id, 12345);
         assert_eq!(result.port, 54321);
-        assert_eq!(result.password, "password");
+        assert_eq!(result.password, "abc123def456");
+        assert_eq!(result.protocol, "https");
+        assert_eq!(result.process_name, "LeagueClient");
+    }
+
+    #[test]
+    fn test_extract_credentials_macos_format() {
+        let commandline = r#"12345 ttys000  0:00.00 /Applications/League of Legends.app/Contents/LoL/Riot Games/League of Legends.app/Contents/MacOS/LeagueClientUx --app-port=54321 --remoting-auth-token=xyz789token --other-args"#;
+        let result = extract_credentials(commandline).unwrap();
+        
+        assert_eq!(result.port, 54321);
+        assert_eq!(result.password, "xyz789token");
         assert_eq!(result.protocol, "https");
     }
 }
-
