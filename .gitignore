@@ -17,6 +17,9 @@ build
 src-tauri/target
 src-tauri/Cargo.lock
 
+# Rust analyzer (language server temporary files)
+target/
+
 # Environment variables
 .env
 .env.local
