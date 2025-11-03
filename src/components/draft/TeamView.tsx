@@ -47,7 +47,7 @@ export default function TeamView({
             index={idx}
             isBlue={isBlue}
             draftActions={draftState.actions}
-            getChampionIconUrl={getChampionIconUrl}
+            getChampionCenteredImageUrl={getChampionCenteredImageUrl}
             getChampionName={getChampionName}
           />
         ))}

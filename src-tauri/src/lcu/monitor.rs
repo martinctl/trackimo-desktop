@@ -25,20 +25,36 @@ impl DraftMonitor {
     pub async fn start_monitoring(&self) {
         let mut interval_timer = interval(Duration::from_millis(self.polling_interval_ms));
         let mut last_state: Option<String> = None;
+        let mut last_timer: Option<f64> = None;
+        let mut last_phase: Option<String> = None;
 
         loop {
             interval_timer.tick().await;
 
             match self.get_current_state().await {
                 Ok(state) => {
+                    // Check if timer changed (even slightly)
+                    let timer_changed = match (state.timer, last_timer) {
+                        (Some(t), Some(lt)) => (t - lt).abs() > 0.01,
+                        (Some(_), None) | (None, Some(_)) => true,
+                        (None, None) => false,
+                    };
+                    
+                    // Check if phase changed
+                    let phase_changed = last_phase.as_ref() != Some(&state.phase);
+                    
                     // Serialize state to compare
                     if let Ok(state_json) = serde_json::to_string(&state) {
-                        if last_state.as_ref() != Some(&state_json) {
-                            // State changed, emit event
+                        let state_changed = last_state.as_ref() != Some(&state_json);
+                        
+                        // Emit if state changed OR timer changed OR phase changed (for smooth updates)
+                        if state_changed || timer_changed || phase_changed {
                             if let Some(window) = self.app_handle.get_webview_window("main") {
                                 let _ = window.emit("draft-state-changed", &state);
                             }
                             last_state = Some(state_json);
+                            last_timer = state.timer;
+                            last_phase = Some(state.phase.clone());
                         }
                     }
                 }
@@ -50,6 +66,8 @@ impl DraftMonitor {
                         }
                     }
                     last_state = None;
+                    last_timer = None;
+                    last_phase = None;
                 }
             }
         }
@@ -66,7 +84,7 @@ pub async fn start_draft_monitoring(
     app: tauri::AppHandle,
     client: tauri::State<'_, Arc<tokio::sync::Mutex<LcuClient>>>,
 ) -> Result<(), String> {
-    let polling_interval = 1000; // Poll every 1 second
+    let polling_interval = 250; // Poll every 250ms for smoother timer updates
     let monitor = DraftMonitor::new(client.inner().clone(), app, polling_interval);
 
     // Spawn the monitoring task

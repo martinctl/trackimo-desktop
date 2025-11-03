@@ -17,26 +17,29 @@ export default function DraftView({ draftState, champions, championVersion = "la
   const [maxTimer, setMaxTimer] = useState<number>(PICK_TIMER);
 
   useEffect(() => {
-    if (draftState?.timer) {
+    if (draftState?.timer !== undefined) {
       setCurrentTimer(draftState.timer);
       const timer = draftState.phase.includes("BAN") ? BAN_TIMER : PICK_TIMER;
       setMaxTimer(timer);
     }
   }, [draftState]);
 
-  // Countdown timer
+  // Smooth countdown timer - updates more frequently for smoother animation
   useEffect(() => {
-    if (!draftState || !draftState.timer) return;
+    if (!draftState || draftState.timer === undefined) return;
+
+    // Use the backend timer as the source of truth when it updates
+    const startTime = Date.now();
+    const startTimer = draftState.timer;
 
     const interval = setInterval(() => {
-      setCurrentTimer((prev) => {
-        if (prev <= 0) return 0;
-        return Math.max(0, prev - 0.1);
-      });
-    }, 100);
+      const elapsed = (Date.now() - startTime) / 1000;
+      const newTimer = Math.max(0, startTimer - elapsed);
+      setCurrentTimer(newTimer);
+    }, 50); // Update every 50ms for smoother animation
 
     return () => clearInterval(interval);
-  }, [draftState]);
+  }, [draftState?.timer]);
 
   const getChampionIconUrl = (championId: number): string => {
     const champ = champions.get(championId);
@@ -68,8 +71,6 @@ export default function DraftView({ draftState, champions, championVersion = "la
   return (
     <div className="flex flex-col h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       <DraftHeader
-        phase={draftState.phase}
-        hasTwoTeams={hasTwoTeams}
         timer={draftState.timer}
         currentTimer={currentTimer}
         maxTimer={maxTimer}
