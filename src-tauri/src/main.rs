@@ -14,7 +14,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            #[cfg(desktop)]
+            #[cfg(windows)]
             let _ = app.handle().plugin(tauri_plugin_updater::Builder::new().build());
             #[cfg(debug_assertions)]
             {

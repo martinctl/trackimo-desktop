@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * Generates a Tauri updater-compatible JSON manifest from GitHub Releases
+ * Generates a Tauri updater-compatible JSON manifest from GitHub Releases (Windows only)
  * 
  * This script fetches the latest release from GitHub and generates a manifest
- * in the format expected by Tauri's updater plugin.
+ * in the format expected by Tauri's updater plugin. Only processes Windows assets (.exe, .msi).
  * 
  * Usage:
  *   node scripts/generate-update-manifest.js
@@ -76,17 +76,12 @@ function fetchRelease(owner, repo, tag = 'latest', token) {
   });
 }
 
-// Map platform names
+// Map platform names (Windows only)
 function getPlatformName(assetName) {
   const name = assetName.toLowerCase();
-  if (name.includes('darwin') || name.includes('macos') || name.includes('.dmg') || name.includes('.app')) {
-    return 'darwin';
-  }
+  // Only process Windows assets
   if (name.includes('windows') || name.includes('.exe') || name.includes('.msi')) {
     return 'windows';
-  }
-  if (name.includes('linux') || name.includes('.AppImage') || name.includes('.deb') || name.includes('.rpm')) {
-    return 'linux';
   }
   return null;
 }
@@ -111,18 +106,18 @@ function generateManifest(release) {
   const version = release.tag_name.replace(/^v/, ''); // Remove 'v' prefix if present
   const platforms = {};
   
-  // Process each asset
+  // Process each asset (Windows only)
   for (const asset of release.assets) {
     const platform = getPlatformName(asset.name);
-    if (!platform) continue;
+    if (!platform) continue; // Skip non-Windows assets
     
     const arch = getArch(asset.name);
     const key = `${platform}-${arch}`;
     
-    // Find signature file
+    // Find signature file (looks for .sig extension)
     const sigAsset = release.assets.find(a => 
       a.name === `${asset.name}.sig` || 
-      a.name === asset.name.replace(/\.(tar\.gz|zip|dmg|exe|msi|AppImage|deb|rpm)$/, '.sig')
+      a.name === asset.name.replace(/\.(exe|msi)$/, '.sig')
     );
     
     if (!platforms[key]) {
@@ -133,17 +128,11 @@ function generateManifest(release) {
     }
   }
   
-  // If no platforms found, create a generic entry
+  // If no Windows assets found, warn user
   if (Object.keys(platforms).length === 0) {
-    console.warn('⚠️  No platform-specific assets found. Creating generic manifest.');
-    if (release.assets.length > 0) {
-      const firstAsset = release.assets[0];
-      const sigAsset = release.assets.find(a => a.name.endsWith('.sig'));
-      platforms['*'] = {
-        signature: sigAsset ? sigAsset.browser_download_url : '',
-        url: firstAsset.browser_download_url
-      };
-    }
+    console.warn('⚠️  No Windows assets found (.exe or .msi files).');
+    console.warn('   Make sure your release includes Windows installer files.');
+    throw new Error('No Windows assets found in release');
   }
   
   return {
