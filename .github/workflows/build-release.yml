@@ -63,13 +63,17 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ github.event.inputs.version }}" -ne "") {
-            $tag = "app-v${{ github.event.inputs.version }}"
+            # Strip "v" prefix if present, then add "app-v" prefix
+            $version = "${{ github.event.inputs.version }}".TrimStart('v')
+            $tag = "app-v$version"
           } else {
+            # Extract version from tauri.conf.json (already without "v")
             $versionJson = node -p "require('./src-tauri/tauri.conf.json').version"
             $version = $versionJson.Trim()
             $tag = "app-v$version"
           }
           echo "tag=$tag" >> $env:GITHUB_OUTPUT
+          echo "Tag name will be: $tag"
 
       - name: Install GitHub CLI
         if: github.event.inputs.skip_vps != 'true'
