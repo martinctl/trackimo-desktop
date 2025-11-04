@@ -60,14 +60,16 @@ jobs:
       - name: Get release tag name
         if: github.event.inputs.skip_vps != 'true'
         id: get_tag
+        shell: pwsh
         run: |
-          if [ "${{ github.event.inputs.version }}" != "" ]; then
-            echo "tag=app-v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            # Extract version from package.json or tauri.conf.json
-            VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
-            echo "tag=app-v${VERSION}" >> $GITHUB_OUTPUT
-          fi
+          if ("${{ github.event.inputs.version }}" -ne "") {
+            $tag = "app-v${{ github.event.inputs.version }}"
+          } else {
+            $versionJson = node -p "require('./src-tauri/tauri.conf.json').version"
+            $version = $versionJson.Trim()
+            $tag = "app-v$version"
+          }
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
 
       - name: Install GitHub CLI
         if: github.event.inputs.skip_vps != 'true'
