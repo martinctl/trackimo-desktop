@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
+import { check } from "@tauri-apps/plugin-updater";
 import type { DraftState, Champion, SummonerInfo, RankedStats, MatchHistoryGame } from "./types";
 import DraftView from "./DraftView";
 import PlayerHeader from "./components/player/PlayerHeader";
@@ -16,6 +17,8 @@ function App() {
   const [rankedStats, setRankedStats] = useState<RankedStats[]>([]);
   const [matchHistory, setMatchHistory] = useState<MatchHistoryGame[]>([]);
   const [appVersion, setAppVersion] = useState<string>("");
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; currentVersion: string } | null>(null);
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
   const draftStateRef = useRef<DraftState | null>(null);
   const monitoringStartedRef = useRef(false);
   const previousConnectedRef = useRef(false);
@@ -26,6 +29,9 @@ function App() {
         // Get app version
         const version = await getVersion();
         setAppVersion(version);
+        
+        // Check for updates (silently in background)
+        checkForUpdatesSilently();
         
         // Load champions
         await loadChampions();
@@ -153,8 +159,99 @@ function App() {
     setTimeout(autoConnect, 3000);
   };
 
+  const checkForUpdatesSilently = async () => {
+    try {
+      const update = await check({
+        timeout: 30000, // 30 seconds
+      });
+
+      if (update?.available) {
+        console.log(`Update available: ${update.version} (current: ${update.currentVersion})`);
+        setUpdateAvailable({
+          version: update.version,
+          currentVersion: update.currentVersion || appVersion,
+        });
+      }
+    } catch (err) {
+      // Silently fail - don't show errors for update checks
+      console.log('Update check failed (this is normal if offline):', err);
+    }
+  };
+
+  const installUpdate = async () => {
+    if (!updateAvailable) return;
+
+    setIsInstallingUpdate(true);
+    try {
+      const update = await check({
+        timeout: 30000,
+      });
+
+      if (update?.available) {
+        let downloaded = 0;
+        let contentLength = 0;
+
+        await update.downloadAndInstall((event) => {
+          switch (event.event) {
+            case 'Started':
+              contentLength = event.data.contentLength || 0;
+              console.log(`Downloading update: ${contentLength} bytes`);
+              break;
+            case 'Progress':
+              downloaded += event.data.chunkLength || 0;
+              const percent = contentLength > 0 ? Math.round((downloaded / contentLength) * 100) : 0;
+              console.log(`Download progress: ${percent}%`);
+              break;
+            case 'Finished':
+              console.log('Download finished');
+              break;
+          }
+        });
+
+        console.log('Update installed. The app will restart automatically on Windows.');
+        // On Windows, the app automatically exits when install is executed
+        // The user will need to manually restart, or we can show a message
+        alert('Update installed! Please restart the app to complete the update.');
+        setIsInstallingUpdate(false);
+        setUpdateAvailable(null);
+      }
+    } catch (err) {
+      console.error('Failed to install update:', err);
+      setIsInstallingUpdate(false);
+      alert('Failed to install update. Please try again or download manually.');
+    }
+  };
+
   return (
     <div className="relative flex flex-col h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
+      {/* Update notification banner */}
+      {updateAvailable && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-blue-600 text-white px-4 py-2 shadow-lg">
+          <div className="flex items-center justify-between max-w-7xl mx-auto">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium">
+                Update available: v{updateAvailable.version} (current: v{updateAvailable.currentVersion})
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setUpdateAvailable(null)}
+                className="px-3 py-1 text-xs bg-blue-700 hover:bg-blue-800 rounded transition-colors"
+              >
+                Later
+              </button>
+              <button
+                onClick={installUpdate}
+                disabled={isInstallingUpdate}
+                className="px-4 py-1 text-xs bg-white text-blue-600 hover:bg-blue-50 rounded font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isInstallingUpdate ? 'Installing...' : 'Install Now'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Version display in bottom-right corner */}
       {appVersion && (
         <div className="fixed bottom-2 right-2 z-50 px-2 py-1 bg-black/50 rounded text-xs text-gray-400 font-mono">
