@@ -39,6 +39,8 @@
         "title": "Trackimo Desktop",
         "width": 1200,
         "height": 800,
+        "minWidth": 1000,
+        "minHeight": 600,
         "useHttpsScheme": true
       }
     ],

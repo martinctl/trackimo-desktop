@@ -59,6 +59,8 @@ export interface SummonerInfo {
   account_id: string;
   puuid: string;
   display_name: string;
+  game_name?: string;
+  tag_line?: string;
   summoner_level: number;
   profile_icon_id: number;
   xp_since_last_level: number;

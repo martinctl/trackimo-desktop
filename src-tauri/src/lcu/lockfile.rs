@@ -28,13 +28,11 @@ pub fn read_lockfile() -> Result<LockfileData, String> {
 /// Try to read lockfile from common installation paths
 fn read_lockfile_from_path() -> Result<LockfileData, String> {
     let lockfile_paths = get_lockfile_paths();
-
     for path in lockfile_paths {
         if let Ok(data) = try_read_lockfile(&path) {
             return Ok(data);
         }
     }
-
     Err("Lockfile not found in common locations".to_string())
 }
 
@@ -93,14 +91,11 @@ fn try_read_lockfile(path: &PathBuf) -> Result<LockfileData, String> {
         .to_string_lossy()
         .replace("~", &std::env::var("HOME").unwrap_or_default());
     let path_buf = PathBuf::from(&expanded_path);
-
     if !path_buf.exists() {
         return Err("Path does not exist".to_string());
     }
-
     let contents = fs::read_to_string(&path_buf)
         .map_err(|e| format!("Failed to read lockfile: {}", e))?;
-
     parse_lockfile_contents(&contents)
 }
 
@@ -108,11 +103,9 @@ fn try_read_lockfile(path: &PathBuf) -> Result<LockfileData, String> {
 fn parse_lockfile_contents(contents: &str) -> Result<LockfileData, String> {
     let line = contents.lines().next().ok_or("Lockfile is empty")?;
     let parts: Vec<&str> = line.split(':').collect();
-
     if parts.len() < 5 {
         return Err("Invalid lockfile format".to_string());
     }
-
     let process_name = parts[0].to_string();
     let process_id = parts[1]
         .parse::<u32>()
@@ -160,7 +153,6 @@ fn get_process_commandline() -> Result<String, String> {
     }
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-
     // Filter out empty lines and the "CommandLine" header
     let lines: Vec<&str> = output_str
         .lines()
@@ -239,7 +231,6 @@ fn extract_credentials(commandline: &str) -> Result<LockfileData, String> {
     // Regex patterns to extract port and password (auth token)
     let port_regex = Regex::new(r"--app-port=([0-9]+)")
         .map_err(|e| format!("Failed to compile port regex: {}", e))?;
-
     let password_regex = Regex::new(r"--remoting-auth-token=([\w-]+)")
         .map_err(|e| format!("Failed to compile password regex: {}", e))?;
 

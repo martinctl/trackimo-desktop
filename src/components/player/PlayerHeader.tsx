@@ -9,12 +9,13 @@ interface PlayerHeaderProps {
 export default function PlayerHeader({ summonerInfo, rankedStats, championVersion }: PlayerHeaderProps) {
   const getRankImage = (tier: string) => {
     const tierLower = tier.toLowerCase();
-    return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblem/emblem-${tierLower}.png`;
+    // Use local rank images from public/ranks directory
+    return `/ranks/${tierLower}.png`;
   };
 
   return (
     <div className="bg-black/50 backdrop-blur-xl border-b border-gray-700/30 shadow-lg">
-      <div className="px-8 py-4 flex items-center justify-between">
+      <div className="max-w-[1600px] mx-auto px-8 py-4 flex items-center justify-between">
         {/* Profile Section */}
         <div className="flex items-center gap-4">
           <div className="relative">
@@ -30,7 +31,11 @@ export default function PlayerHeader({ summonerInfo, rankedStats, championVersio
             </div>
           </div>
           <div>
-            <h2 className="text-xl font-bold text-white">{summonerInfo.display_name}</h2>
+            <h2 className="text-xl font-bold text-white">
+              {summonerInfo.game_name && summonerInfo.tag_line 
+                ? `${summonerInfo.game_name}#${summonerInfo.tag_line}`
+                : summonerInfo.display_name}
+            </h2>
             <div className="flex items-center gap-2 text-xs text-gray-400">
               <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
               <span>Online</span>

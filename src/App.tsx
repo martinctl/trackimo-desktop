@@ -3,17 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { DraftState, Champion, SummonerInfo, RankedStats, MatchHistoryGame } from "./types";
 import DraftView from "./DraftView";
-import ConnectionStatus from "./components/common/ConnectionStatus";
 import PlayerHeader from "./components/player/PlayerHeader";
 import PlayerDashboard from "./components/player/PlayerDashboard";
 
-interface ConnectionStatusState {
-  connected: boolean;
-  error?: string;
-}
-
 function App() {
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatusState>({ connected: false });
   const [draftState, setDraftState] = useState<DraftState | null>(null);
   const [champions, setChampions] = useState<Map<number, Champion>>(new Map());
   const [championVersion, setChampionVersion] = useState<string>("latest");
@@ -124,33 +117,25 @@ function App() {
 
   const autoConnect = async () => {
     try {
-      const status: ConnectionStatusState = await invoke("test_connection");
+      // Try to get gameflow phase to check if LCU is connected
+      await invoke("get_gameflow_phase");
       const wasConnected = previousConnectedRef.current;
-      previousConnectedRef.current = status.connected;
-      setConnectionStatus(status);
+      previousConnectedRef.current = true;
       
-      if (status.connected) {
-        // Start monitoring if not already started
-        if (!monitoringStartedRef.current) {
-          await invoke("start_draft_monitoring");
-          monitoringStartedRef.current = true;
-        }
-        
-        // Fetch player info if we just connected or if we don't have data yet
-        if (!wasConnected || !summonerInfo) {
-          // Small delay to ensure League API is fully ready
-          await new Promise(resolve => setTimeout(resolve, 500));
-          await fetchPlayerInfo();
-        }
-      } else {
-        // Disconnected - clear monitoring and data
-        monitoringStartedRef.current = false;
-        setSummonerInfo(null);
-        setRankedStats([]);
-        setMatchHistory([]);
+      // Start monitoring if not already started
+      if (!monitoringStartedRef.current) {
+        await invoke("start_draft_monitoring");
+        monitoringStartedRef.current = true;
+      }
+      
+      // Fetch player info if we just connected or if we don't have data yet
+      if (!wasConnected || !summonerInfo) {
+        // Small delay to ensure League API is fully ready
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await fetchPlayerInfo();
       }
     } catch (error) {
-      setConnectionStatus({ connected: false, error: String(error) });
+      // LCU not connected
       previousConnectedRef.current = false;
       monitoringStartedRef.current = false;
       setSummonerInfo(null);
@@ -164,8 +149,6 @@ function App() {
 
   return (
     <div className="relative flex flex-col h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
-      <ConnectionStatus tauriReady={tauriReady} connected={connectionStatus.connected} />
-
       {/* Player Header - shown when connected but not in draft */}
       {summonerInfo && !draftState && (
         <PlayerHeader
@@ -182,7 +165,8 @@ function App() {
           matchHistory={matchHistory}
           champions={champions}
           championVersion={championVersion}
-          connectionStatus={connectionStatus}
+          rankedStats={rankedStats}
+          connected={summonerInfo !== null}
           tauriReady={tauriReady}
         />
       ) : (

@@ -4,9 +4,16 @@ interface MatchHistoryItemProps {
   game: MatchHistoryGame;
   champion: Champion | undefined;
   championVersion: string;
+  getChampionCenteredImageUrl: (championId: number) => string;
+  getChampionName: (championId: number) => string;
 }
 
-export default function MatchHistoryItem({ game, champion, championVersion }: MatchHistoryItemProps) {
+export default function MatchHistoryItem({ 
+  game, 
+  champion, 
+  getChampionCenteredImageUrl,
+  getChampionName
+}: MatchHistoryItemProps) {
   const kda = game.deaths > 0 
     ? ((game.kills + game.assists) / game.deaths).toFixed(2)
     : (game.kills + game.assists).toFixed(1);
@@ -15,51 +22,85 @@ export default function MatchHistoryItem({ game, champion, championVersion }: Ma
 
   return (
     <div 
-      className={`flex items-center gap-4 p-4 rounded-lg border transition-all ${
+      className={`relative flex items-center bg-gradient-to-r ${
         game.win 
-          ? 'bg-blue-500/10 border-blue-400/30 hover:bg-blue-500/15' 
-          : 'bg-red-500/10 border-red-400/30 hover:bg-red-500/15'
-      }`}
+          ? "from-blue-950/30 to-blue-900/20" 
+          : "from-red-950/30 to-red-900/20"
+      } backdrop-blur-sm border-b ${
+        game.win 
+          ? "border-blue-500/20" 
+          : "border-red-500/20"
+      } overflow-hidden h-[120px]`}
     >
-      {/* Champion Icon */}
-      <div className="flex-shrink-0">
-        <div className={`w-16 h-16 rounded-lg overflow-hidden border-2 ${
-          game.win ? 'border-blue-400/50' : 'border-red-400/50'
-        }`}>
-          {champion && (
-            <img 
-              src={`https://ddragon.leagueoflegends.com/cdn/${championVersion}/img/champion/${champion.id}.png`}
-              alt={champion.name}
-              className="w-full h-full object-cover"
-            />
+      {/* Champion Centered Image */}
+      <div 
+        className={`relative flex-1 h-full ${
+          game.win 
+            ? "border-l-4 border-blue-400/50 shadow-lg shadow-blue-400/20" 
+            : "border-l-4 border-red-400/50 shadow-lg shadow-red-400/20"
+        }`}
+      >
+        <div className="relative w-full h-full overflow-hidden">
+          {champion && game.champion_id ? (
+            <>
+              <img
+                src={getChampionCenteredImageUrl(game.champion_id)}
+                alt={getChampionName(game.champion_id)}
+                className="w-full h-full object-cover"
+                style={{ objectPosition: 'center 25%' }}
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
+              {/* Gradient overlay */}
+              <div className={`absolute inset-0 bg-gradient-to-r ${
+                game.win
+                  ? "from-blue-950/80 via-blue-950/40 to-transparent"
+                  : "from-red-950/80 via-red-950/40 to-transparent"
+              } pointer-events-none`} />
+              
+              {/* Game Info Overlay */}
+              <div className={`absolute left-3 bottom-2 z-10 ${
+                game.win 
+                  ? "text-blue-100" 
+                  : "text-red-100"
+              }`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-xs font-bold ${game.win ? 'text-blue-300' : 'text-red-300'}`}>
+                    {game.win ? 'Victory' : 'Defeat'}
+                  </span>
+                  <span className="text-gray-400 text-xs">•</span>
+                  <span className="text-gray-300 text-xs">{minutes}:{seconds.toString().padStart(2, '0')}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-semibold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                    {game.kills} / {game.deaths} / {game.assists}
+                  </span>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-cyan-300 font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                    {kda} KDA
+                  </span>
+                </div>
+              </div>
+
+              {/* Champion Name Overlay */}
+              <div className={`absolute right-3 bottom-2 z-10 ${
+                game.win 
+                  ? "text-blue-100" 
+                  : "text-red-100"
+              }`}>
+                <div className="text-sm font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                  {getChampionName(game.champion_id)}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gray-900/50">
+              <span className="text-gray-500 text-3xl font-bold">?</span>
+            </div>
           )}
         </div>
-      </div>
-
-      {/* Game Info */}
-      <div className="flex-1">
-        <div className="flex items-center gap-3 mb-1">
-          <span className={`text-sm font-bold ${game.win ? 'text-blue-400' : 'text-red-400'}`}>
-            {game.win ? 'Victory' : 'Defeat'}
-          </span>
-          <span className="text-gray-500 text-sm">•</span>
-          <span className="text-gray-400 text-sm">{minutes}:{seconds.toString().padStart(2, '0')}</span>
-        </div>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-white font-semibold">
-            {game.kills} / {game.deaths} / {game.assists}
-          </span>
-          <span className="text-gray-500">•</span>
-          <span className="text-gray-300">
-            <span className="text-cyan-400 font-bold">{kda}</span> KDA
-          </span>
-        </div>
-      </div>
-
-      {/* Champion Name */}
-      <div className="hidden md:block text-right">
-        <div className="text-white font-semibold">{champion?.name || 'Unknown'}</div>
-        <div className="text-gray-400 text-xs">{champion?.title || ''}</div>
       </div>
     </div>
   );

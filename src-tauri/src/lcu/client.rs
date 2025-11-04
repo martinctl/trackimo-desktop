@@ -4,17 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectionStatus {
-    pub connected: bool,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SummonerInfo {
     pub summoner_id: String,
     pub account_id: String,
     pub puuid: String,
     pub display_name: String,
+    pub game_name: Option<String>,
+    pub tag_line: Option<String>,
     pub summoner_level: i64,
     pub profile_icon_id: i64,
     pub xp_since_last_level: i64,
@@ -67,7 +63,8 @@ impl LcuClient {
     /// Get LCU credentials, always tries to fetch fresh credentials if not cached
     pub fn get_lockfile(&mut self) -> Result<&LockfileData, String> {
         if self.lockfile_data.is_none() {
-            self.lockfile_data = Some(read_lockfile()?);
+            let data = read_lockfile()?;
+            self.lockfile_data = Some(data);
         }
         Ok(self.lockfile_data.as_ref().unwrap())
     }
@@ -75,28 +72,6 @@ impl LcuClient {
     /// Clear cached credentials (useful when League client restarts)
     pub fn clear_credentials(&mut self) {
         self.lockfile_data = None;
-    }
-
-    pub async fn test_connection(&mut self) -> ConnectionStatus {
-        // Clear credentials first to force a fresh check
-        self.clear_credentials();
-
-        match self.get_lockfile() {
-            Ok(_) => match self.get_gameflow_phase().await {
-                Ok(_) => ConnectionStatus {
-                    connected: true,
-                    error: None,
-                },
-                Err(e) => ConnectionStatus {
-                    connected: false,
-                    error: Some(format!("Failed to connect to LCU API: {}", e)),
-                },
-            },
-            Err(e) => ConnectionStatus {
-                connected: false,
-                error: Some(e),
-            },
-        }
     }
 
     pub async fn get_gameflow_phase(&mut self) -> Result<String, String> {
@@ -220,8 +195,9 @@ impl LcuClient {
             password = lockfile.password.clone();
         }
         let base_url = format!("{}://127.0.0.1:{}", protocol, port);
+        
+        // First, get the current summoner info
         let url = format!("{}/lol-summoner/v1/current-summoner", base_url);
-
         let response = self
             .client
             .get(&url)
@@ -239,14 +215,47 @@ impl LcuClient {
             .await
             .map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
+        // Try to get gameName and tagLine from current-summoner response first
+        let mut game_name = json_value["gameName"].as_str().map(|s| s.to_string());
+        let mut tag_line = json_value["tagLine"].as_str().map(|s| s.to_string());
+        
+        let puuid = json_value["puuid"].as_str().unwrap_or("").to_string();
+        
+        // If not found in current-summoner, try alias lookup using puuid
+        if game_name.is_none() || tag_line.is_none() {
+            if !puuid.is_empty() {
+                let alias_url = format!("{}/lol-summoner/v1/alias/lookup?puuid={}", base_url, puuid);
+                if let Ok(alias_response) = self
+                    .client
+                    .get(&alias_url)
+                    .basic_auth("riot", Some(&password))
+                    .send()
+                    .await
+                {
+                    if alias_response.status().is_success() {
+                        if let Ok(alias_json) = alias_response.json::<serde_json::Value>().await {
+                            if game_name.is_none() {
+                                game_name = alias_json["gameName"].as_str().map(|s| s.to_string());
+                            }
+                            if tag_line.is_none() {
+                                tag_line = alias_json["tagLine"].as_str().map(|s| s.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(SummonerInfo {
             summoner_id: json_value["summonerId"].as_str().unwrap_or("").to_string(),
             account_id: json_value["accountId"].as_str().unwrap_or("").to_string(),
-            puuid: json_value["puuid"].as_str().unwrap_or("").to_string(),
+            puuid,
             display_name: json_value["displayName"]
                 .as_str()
                 .unwrap_or("Unknown")
                 .to_string(),
+            game_name,
+            tag_line,
             summoner_level: json_value["summonerLevel"].as_i64().unwrap_or(0),
             profile_icon_id: json_value["profileIconId"].as_i64().unwrap_or(0),
             xp_since_last_level: json_value["xpSinceLastLevel"].as_i64().unwrap_or(0),
@@ -336,6 +345,10 @@ impl LcuClient {
     }
 
     async fn try_get_match_history(&mut self) -> Result<Vec<MatchHistoryGame>, String> {
+        self.try_get_match_history_paginated(0, 10).await
+    }
+
+    pub async fn try_get_match_history_paginated(&mut self, beg_index: usize, end_index: usize) -> Result<Vec<MatchHistoryGame>, String> {
         // Get summoner PUUID first
         let summoner = self.get_current_summoner().await?;
         let puuid = summoner.puuid;
@@ -352,8 +365,8 @@ impl LcuClient {
 
         let base_url = format!("{}://127.0.0.1:{}", protocol, port);
         let url = format!(
-            "{}/lol-match-history/v1/products/lol/{}/matches?begIndex=0&endIndex=10",
-            base_url, puuid
+            "{}/lol-match-history/v1/products/lol/{}/matches?begIndex={}&endIndex={}",
+            base_url, puuid, beg_index, end_index
         );
 
         let response = self
@@ -381,7 +394,7 @@ impl LcuClient {
             .or_else(|| json_value["games"].as_array());
 
         if let Some(games_arr) = games_array {
-            for game in games_arr.iter().take(5) {
+            for game in games_arr.iter() {
                 let game_id = game["gameId"].as_i64().unwrap_or(0);
                 let game_mode = game["gameMode"].as_str().unwrap_or("").to_string();
                 let game_creation = game["gameCreation"].as_i64().unwrap_or(0);
@@ -406,8 +419,11 @@ impl LcuClient {
                                     let champion_id =
                                         participant_stats["championId"].as_i64().unwrap_or(0)
                                             as i32;
-                                    let win_str = stats["win"].as_str().unwrap_or("");
-                                    let win = win_str == "Win";
+                                    // Win can be boolean or string "Win"/"Fail"
+                                    let win = stats["win"].as_bool()
+                                        .unwrap_or_else(|| {
+                                            stats["win"].as_str().map(|s| s == "Win").unwrap_or(false)
+                                        });
 
                                     games.push(MatchHistoryGame {
                                         game_id,
@@ -437,17 +453,6 @@ impl LcuClient {
 // Tauri commands
 use std::sync::Arc;
 use tauri::State;
-
-#[tauri::command]
-pub async fn test_connection(
-    client: State<'_, Arc<tokio::sync::Mutex<LcuClient>>>,
-) -> Result<ConnectionStatus, String> {
-    let result = {
-        let mut client_guard = client.lock().await;
-        client_guard.test_connection().await
-    };
-    Ok(result)
-}
 
 #[tauri::command]
 pub async fn get_gameflow_phase(
@@ -504,4 +509,14 @@ pub async fn get_match_history(
 ) -> Result<Vec<MatchHistoryGame>, String> {
     let mut client_guard = client.lock().await;
     client_guard.get_match_history().await
+}
+
+#[tauri::command]
+pub async fn get_match_history_paginated(
+    client: State<'_, Arc<tokio::sync::Mutex<LcuClient>>>,
+    beg_index: usize,
+    end_index: usize,
+) -> Result<Vec<MatchHistoryGame>, String> {
+    let mut client_guard = client.lock().await;
+    client_guard.try_get_match_history_paginated(beg_index, end_index).await
 }

@@ -15,7 +15,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             #[cfg(desktop)]
-            app.handle().plugin(tauri_plugin_updater::Builder::new().build());
+            let _ = app.handle().plugin(tauri_plugin_updater::Builder::new().build());
             #[cfg(debug_assertions)]
             {
                 let window = app.get_webview_window("main").unwrap();
@@ -34,13 +34,13 @@ fn main() {
             ChampionCache::new().expect("Failed to initialize champion cache"),
         ))
         .invoke_handler(tauri::generate_handler![
-            lcu::client::test_connection,
             lcu::client::get_gameflow_phase,
             lcu::client::get_draft_session,
             lcu::client::get_draft_state,
             lcu::client::get_current_summoner,
             lcu::client::get_ranked_stats,
             lcu::client::get_match_history,
+            lcu::client::get_match_history_paginated,
             lcu::monitor::start_draft_monitoring,
             champions::client::fetch_champion_data,
             champions::cache::get_champion_by_id,
