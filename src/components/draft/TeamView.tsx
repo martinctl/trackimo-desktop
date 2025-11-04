@@ -1,4 +1,4 @@
-import type { Team, DraftState, Champion } from "../../types";
+import type { Team, DraftState } from "../../types";
 import PickCard from "./PickCard";
 import BanSlot from "./BanSlot";
 
@@ -8,9 +8,6 @@ interface TeamViewProps {
   team: Team;
   isBlue: boolean;
   draftState: DraftState;
-  champions: Map<number, Champion>;
-  championVersion: string;
-  getChampionIconUrl: (championId: number) => string;
   getChampionCenteredImageUrl: (championId: number) => string;
   getChampionName: (championId: number) => string;
 }
@@ -19,9 +16,6 @@ export default function TeamView({
   team,
   isBlue,
   draftState,
-  champions,
-  championVersion,
-  getChampionIconUrl,
   getChampionCenteredImageUrl,
   getChampionName
 }: TeamViewProps) {

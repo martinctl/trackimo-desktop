@@ -190,7 +190,6 @@ function App() {
           <DraftView 
             draftState={draftState} 
             champions={champions}
-            championVersion={championVersion}
           />
         </div>
       )}

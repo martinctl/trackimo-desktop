@@ -6,13 +6,12 @@ import TeamView from "./components/draft/TeamView";
 interface DraftViewProps {
   draftState: DraftState | null;
   champions: Map<number, Champion>;
-  championVersion?: string;
 }
 
 const PICK_TIMER = 30;
 const BAN_TIMER = 30;
 
-export default function DraftView({ draftState, champions, championVersion = "latest" }: DraftViewProps) {
+export default function DraftView({ draftState, champions }: DraftViewProps) {
   const [currentTimer, setCurrentTimer] = useState<number>(0);
   const [maxTimer, setMaxTimer] = useState<number>(PICK_TIMER);
 
@@ -41,12 +40,6 @@ export default function DraftView({ draftState, champions, championVersion = "la
     return () => clearInterval(interval);
   }, [draftState?.timer]);
 
-  const getChampionIconUrl = (championId: number): string => {
-    const champ = champions.get(championId);
-    if (!champ) return "";
-    return `https://ddragon.leagueoflegends.com/cdn/${championVersion || "latest"}/img/champion/${champ.id}.png`;
-  };
-
   const getChampionCenteredImageUrl = (championId: number): string => {
     const champ = champions.get(championId);
     if (!champ) return "";
@@ -66,8 +59,6 @@ export default function DraftView({ draftState, champions, championVersion = "la
 
   if (!draftState) return null;
 
-  const hasTwoTeams = draftState.teams.length >= 2;
-
   return (
     <div className="flex flex-col h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       <DraftHeader
@@ -85,9 +76,6 @@ export default function DraftView({ draftState, champions, championVersion = "la
               team={draftState.teams[0]}
               isBlue={true}
               draftState={draftState}
-              champions={champions}
-              championVersion={championVersion}
-              getChampionIconUrl={getChampionIconUrl}
               getChampionCenteredImageUrl={getChampionCenteredImageUrl}
               getChampionName={getChampionName}
             />
@@ -106,9 +94,6 @@ export default function DraftView({ draftState, champions, championVersion = "la
               team={draftState.teams[1]}
               isBlue={false}
               draftState={draftState}
-              champions={champions}
-              championVersion={championVersion}
-              getChampionIconUrl={getChampionIconUrl}
               getChampionCenteredImageUrl={getChampionCenteredImageUrl}
               getChampionName={getChampionName}
             />
@@ -120,9 +105,6 @@ export default function DraftView({ draftState, champions, championVersion = "la
               team={draftState.teams[0]}
               isBlue={true}
               draftState={draftState}
-              champions={champions}
-              championVersion={championVersion}
-              getChampionIconUrl={getChampionIconUrl}
               getChampionCenteredImageUrl={getChampionCenteredImageUrl}
               getChampionName={getChampionName}
             />

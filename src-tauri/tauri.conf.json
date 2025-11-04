@@ -20,7 +20,16 @@
   "mainBinaryName": "Trackimo Desktop",
   "version": "1.0.0",
   "identifier": "com.trackimo.desktop",
-  "plugins": {},
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/martinctl/trackimo-desktop/releases/latest/download/update-manifest.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEzRDI0REEyMERERjRDQ0QKUldUTlROOE5vazNTRXp2d2ZscmpFcTdTQ25NR1I2ekU2ZkNWY3UxYnFJd3hZYjFLZDYvenpsZmgK"
+    }
+  },
   "app": {
     "withGlobalTauri": false,
     "windows": [
