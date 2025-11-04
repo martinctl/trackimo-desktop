@@ -18,6 +18,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,7 +57,34 @@ try {
   
   // Write SSH key
   fs.writeFileSync(sshKeyPath, sshKeyContent);
-  fs.chmodSync(sshKeyPath, 0o600); // Secure permissions
+  
+  // Set secure permissions (Windows-compatible)
+  const isWindows = os.platform() === 'win32';
+  if (isWindows) {
+    // On Windows, use icacls to set permissions
+    // Remove inheritance and all permissions, then grant only to current user
+    try {
+      // First, remove inheritance and all existing permissions
+      execSync(`icacls "${sshKeyPath}" /inheritance:r`, { stdio: 'ignore' });
+      // Grant full control to current user (usually runneradmin in GitHub Actions)
+      execSync(`icacls "${sshKeyPath}" /grant:r "${process.env.USERNAME || 'runneradmin'}:(F)"`, { stdio: 'ignore' });
+      // Explicitly deny access to BUILTIN\Users (this is what SSH requires)
+      execSync(`icacls "${sshKeyPath}" /remove "BUILTIN\\Users"`, { stdio: 'ignore' });
+    } catch (e) {
+      // If icacls fails, try using PowerShell with proper ACL
+      try {
+        const escapedPath = sshKeyPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const psScript = `$path = "${escapedPath}"; $acl = Get-Acl $path; $acl.SetAccessRuleProtection($true, $false); $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name; $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($user, "FullControl", "Allow"); $acl.RemoveAccessRuleAll($accessRule); $acl.AddAccessRule($accessRule); Set-Acl $path $acl`;
+        execSync(`powershell -Command "${psScript}"`, { stdio: 'ignore' });
+      } catch (e2) {
+        console.warn('⚠️  Warning: Could not set Windows file permissions.');
+        console.warn('   Attempting to continue anyway...');
+      }
+    }
+  } else {
+    // On Unix/Linux, use chmod
+    fs.chmodSync(sshKeyPath, 0o600);
+  }
   
   console.log(`📦 Deploying version ${version} to ${vpsUser}@${vpsHost}:${vpsReleasePath}`);
   
