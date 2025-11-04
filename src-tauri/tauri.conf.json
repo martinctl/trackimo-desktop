@@ -24,6 +24,7 @@
     "updater": {
       "active": true,
       "endpoints": [
+        "https://release.trackimo.lol/latest.json",
         "https://github.com/martinctl/trackimo-desktop/releases/latest/download/update-manifest.json"
       ],
       "dialog": true,

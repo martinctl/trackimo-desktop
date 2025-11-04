@@ -69,5 +69,11 @@ Thumbs.db
 coverage
 .nyc_output
 
+# Deployment artifacts
+release-artifacts/
+.tmp-ssh-key
+update-manifest.json
+latest.json
+
 # Misc
 .turbo

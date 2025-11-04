@@ -1,0 +1,95 @@
+name: Build and Release Windows
+
+on:
+  push:
+    branches:
+      - release
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+      skip_vps:
+        description: 'Skip VPS deployment'
+        type: boolean
+        default: false
+
+jobs:
+  build-windows:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build and sign with Tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: app-v__VERSION__
+          releaseName: 'Trackimo Desktop v__VERSION__'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: false
+          prerelease: false
+          args: ''
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: false
+
+      - name: Setup Node.js for deployment
+        if: github.event.inputs.skip_vps != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Get release tag name
+        if: github.event.inputs.skip_vps != 'true'
+        id: get_tag
+        run: |
+          if [ "${{ github.event.inputs.version }}" != "" ]; then
+            echo "tag=app-v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            # Extract version from package.json or tauri.conf.json
+            VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+            echo "tag=app-v${VERSION}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install GitHub CLI
+        if: github.event.inputs.skip_vps != 'true'
+        run: |
+          choco install gh -y
+
+      - name: Download release artifacts from GitHub
+        if: github.event.inputs.skip_vps != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir release-artifacts
+          gh release download "${{ steps.get_tag.outputs.tag }}" --repo ${{ github.repository }} --dir release-artifacts --pattern "*.msi" --pattern "*.sig" --pattern "*.json"
+
+      - name: Deploy to VPS
+        if: github.event.inputs.skip_vps != 'true'
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_RELEASE_PATH: ${{ secrets.VPS_RELEASE_PATH }}
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          node scripts/deploy-to-vps.js
+
