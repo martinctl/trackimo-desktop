@@ -1,0 +1,32 @@
+name: Test VPS Connection
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_file:
+        description: 'Test file content'
+        default: 'Hello from GitHub Actions!'
+        required: false
+
+jobs:
+  test-vps:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Test SSH Connection
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_RELEASE_PATH: ${{ secrets.VPS_RELEASE_PATH }}
+        run: |
+          node scripts/test-vps-connection.js
+

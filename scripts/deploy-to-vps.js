@@ -88,6 +88,14 @@ try {
   
   console.log(`📦 Deploying version ${version} to ${vpsUser}@${vpsHost}:${vpsReleasePath}`);
   
+  // Debug: Show configuration
+  console.log(`\n🔍 Debug Info:`);
+  console.log(`   VPS Host: ${vpsHost}`);
+  console.log(`   VPS User: ${vpsUser}`);
+  console.log(`   Remote Path: ${vpsReleasePath}`);
+  console.log(`   SSH Key Path: ${sshKeyPath}`);
+  console.log(`   Platform: ${os.platform()}\n`);
+  
   // Find MSI and signature files
   const artifactsDir = path.join(__dirname, '../release-artifacts');
   
@@ -165,9 +173,40 @@ try {
   
   const remotePath = `${vpsUser}@${vpsHost}:${vpsReleasePath}`;
   
+  // Debug: Check remote directory permissions first
+  console.log('\n🔍 Checking remote directory permissions...');
+  try {
+    const checkDir = execSync(`ssh ${scpOptions.join(' ')} ${vpsUser}@${vpsHost} "ls -ld ${vpsReleasePath}"`, { 
+      encoding: 'utf-8',
+      stdio: 'pipe'
+    });
+    console.log(`   ${checkDir.trim()}`);
+    
+    const checkWrite = execSync(`ssh ${scpOptions.join(' ')} ${vpsUser}@${vpsHost} "test -w ${vpsReleasePath} && echo 'writable' || echo 'NOT writable'"`, { 
+      encoding: 'utf-8',
+      stdio: 'pipe'
+    });
+    if (checkWrite.trim() === 'writable') {
+      console.log(`   ✅ Directory is writable\n`);
+    } else {
+      console.error(`   ❌ Directory is NOT writable!\n`);
+      console.error(`   💡 Fix with: ssh ${vpsUser}@${vpsHost} "sudo chown -R ${vpsUser}:${vpsUser} ${vpsReleasePath}"`);
+      console.error(`   💡 Or: ssh ${vpsUser}@${vpsHost} "sudo chmod 755 ${vpsReleasePath}"\n`);
+    }
+  } catch (e) {
+    console.warn(`   ⚠️  Could not check permissions: ${e.message}\n`);
+  }
+  
   // Ensure remote directory exists
+  console.log('📁 Ensuring remote directory exists...');
   const sshCmd = ['ssh', ...scpOptions, `${vpsUser}@${vpsHost}`, `mkdir -p ${vpsReleasePath}`];
-  execSync(sshCmd.join(' '), { stdio: 'inherit' });
+  try {
+    execSync(sshCmd.join(' '), { stdio: 'inherit' });
+    console.log('   ✅ Directory check complete\n');
+  } catch (e) {
+    console.error(`   ❌ Failed to create directory: ${e.message}`);
+    throw e;
+  }
   
   // Upload MSI
   const scpMsi = ['scp', ...scpOptions, msiFullPath, remotePath];
