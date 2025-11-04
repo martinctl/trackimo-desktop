@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import type { DraftState, Champion, SummonerInfo, RankedStats, MatchHistoryGame } from "./types";
 import DraftView from "./DraftView";
 import PlayerHeader from "./components/player/PlayerHeader";
@@ -14,6 +15,7 @@ function App() {
   const [summonerInfo, setSummonerInfo] = useState<SummonerInfo | null>(null);
   const [rankedStats, setRankedStats] = useState<RankedStats[]>([]);
   const [matchHistory, setMatchHistory] = useState<MatchHistoryGame[]>([]);
+  const [appVersion, setAppVersion] = useState<string>("");
   const draftStateRef = useRef<DraftState | null>(null);
   const monitoringStartedRef = useRef(false);
   const previousConnectedRef = useRef(false);
@@ -21,6 +23,10 @@ function App() {
   useEffect(() => {
     const initialize = async () => {
       try {
+        // Get app version
+        const version = await getVersion();
+        setAppVersion(version);
+        
         // Load champions
         await loadChampions();
         setTauriReady(true);
@@ -149,6 +155,13 @@ function App() {
 
   return (
     <div className="relative flex flex-col h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
+      {/* Version display in bottom-right corner */}
+      {appVersion && (
+        <div className="fixed bottom-2 right-2 z-50 px-2 py-1 bg-black/50 rounded text-xs text-gray-400 font-mono">
+          v{appVersion}
+        </div>
+      )}
+
       {/* Player Header - shown when connected but not in draft */}
       {summonerInfo && !draftState && (
         <PlayerHeader
