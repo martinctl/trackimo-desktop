@@ -7,6 +7,7 @@ import type { DraftState, Champion, SummonerInfo, RankedStats, MatchHistoryGame 
 import DraftView from "./DraftView";
 import PlayerDashboard from "./components/player/PlayerDashboard";
 import Header from "./components/Header";
+import UpdateNotification from "./components/UpdateNotification";
 
 function App() {
   const [draftState, setDraftState] = useState<DraftState | null>(null);
@@ -270,32 +271,15 @@ function App() {
         formatTime={formatTime}
       />
 
-      {/* Update notification banner */}
+      {/* Update notification */}
       {updateAvailable && (
-        <div className="fixed z-50 bg-blue-600 text-white px-4 py-2 shadow-lg left-0 right-0" style={{ top: draftState ? '122px' : (summonerInfo ? '122px' : '40px') }}>
-          <div className="flex items-center justify-between max-w-7xl mx-auto">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium">
-                Update available: v{updateAvailable.version} (current: v{updateAvailable.currentVersion})
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setUpdateAvailable(null)}
-                className="px-3 py-1 text-xs bg-blue-700 hover:bg-blue-800 rounded transition-colors"
-              >
-                Later
-              </button>
-              <button
-                onClick={installUpdate}
-                disabled={isInstallingUpdate}
-                className="px-4 py-1 text-xs bg-white text-blue-600 hover:bg-blue-50 rounded font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {isInstallingUpdate ? 'Installing...' : 'Install Now'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <UpdateNotification
+          version={updateAvailable.version}
+          currentVersion={updateAvailable.currentVersion}
+          isInstalling={isInstallingUpdate}
+          onInstall={installUpdate}
+          onDismiss={() => setUpdateAvailable(null)}
+        />
       )}
 
       {/* Version display in bottom-right corner */}
