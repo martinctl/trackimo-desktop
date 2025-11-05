@@ -12,8 +12,6 @@
     "core:window:allow-unmaximize",
     "core:window:allow-close",
     "core:window:allow-start-dragging",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-toggle-fullscreen",
     "shell:allow-open",
     "shell:default",
     "updater:default"
