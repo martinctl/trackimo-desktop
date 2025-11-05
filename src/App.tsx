@@ -5,8 +5,8 @@ import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
 import type { DraftState, Champion, SummonerInfo, RankedStats, MatchHistoryGame } from "./types";
 import DraftView from "./DraftView";
-import PlayerHeader from "./components/player/PlayerHeader";
 import PlayerDashboard from "./components/player/PlayerDashboard";
+import Header from "./components/Header";
 
 function App() {
   const [draftState, setDraftState] = useState<DraftState | null>(null);
@@ -19,6 +19,7 @@ function App() {
   const [appVersion, setAppVersion] = useState<string>("");
   const [updateAvailable, setUpdateAvailable] = useState<{ version: string; currentVersion: string } | null>(null);
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
+  const [draftTimer, setDraftTimer] = useState<{ current: number; max: number } | null>(null);
   const draftStateRef = useRef<DraftState | null>(null);
   const monitoringStartedRef = useRef(false);
   const previousConnectedRef = useRef(false);
@@ -159,6 +160,39 @@ function App() {
     setTimeout(autoConnect, 3000);
   };
 
+  // Calculate draft timer values for header
+  useEffect(() => {
+    if (!draftState || draftState.timer === undefined) {
+      setDraftTimer(null);
+      return;
+    }
+
+    const PICK_TIMER = 30;
+    const BAN_TIMER = 30;
+    const timer = draftState.phase.includes("BAN") ? BAN_TIMER : PICK_TIMER;
+    
+    // Update timer smoothly
+    const startTime = Date.now();
+    const startTimer = draftState.timer;
+
+    const interval = setInterval(() => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      const newTimer = Math.max(0, startTimer - elapsed);
+      setDraftTimer({ current: newTimer, max: timer });
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, [draftState]);
+
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // Determine current view
+  const currentView = draftState ? "draft" : (summonerInfo ? "dashboard" : "welcome");
+
   const checkForUpdatesSilently = async () => {
     try {
       const update = await check({
@@ -224,9 +258,21 @@ function App() {
 
   return (
     <div className="relative flex flex-col h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
+      {/* Header */}
+      <Header
+        view={currentView}
+        summonerInfo={summonerInfo}
+        rankedStats={rankedStats}
+        championVersion={championVersion}
+        draftState={draftState}
+        currentTimer={draftTimer?.current}
+        maxTimer={draftTimer?.max}
+        formatTime={formatTime}
+      />
+
       {/* Update notification banner */}
       {updateAvailable && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-blue-600 text-white px-4 py-2 shadow-lg">
+        <div className="fixed z-50 bg-blue-600 text-white px-4 py-2 shadow-lg left-0 right-0" style={{ top: draftState ? '122px' : (summonerInfo ? '122px' : '40px') }}>
           <div className="flex items-center justify-between max-w-7xl mx-auto">
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium">
@@ -257,15 +303,6 @@ function App() {
         <div className="fixed bottom-2 right-2 z-50 px-2 py-1 bg-black/50 rounded text-xs text-gray-400 font-mono">
           v{appVersion}
         </div>
-      )}
-
-      {/* Player Header - shown when connected but not in draft */}
-      {summonerInfo && !draftState && (
-        <PlayerHeader
-          summonerInfo={summonerInfo}
-          rankedStats={rankedStats}
-          championVersion={championVersion}
-        />
       )}
 
       {/* Main content */}

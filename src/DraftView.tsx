@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
 import type { DraftState, Champion } from "./types";
-import DraftHeader from "./components/draft/DraftHeader";
 import TeamView from "./components/draft/TeamView";
 
 interface DraftViewProps {
@@ -8,37 +6,7 @@ interface DraftViewProps {
   champions: Map<number, Champion>;
 }
 
-const PICK_TIMER = 30;
-const BAN_TIMER = 30;
-
 export default function DraftView({ draftState, champions }: DraftViewProps) {
-  const [currentTimer, setCurrentTimer] = useState<number>(0);
-  const [maxTimer, setMaxTimer] = useState<number>(PICK_TIMER);
-
-  useEffect(() => {
-    if (draftState?.timer !== undefined) {
-      setCurrentTimer(draftState.timer);
-      const timer = draftState.phase.includes("BAN") ? BAN_TIMER : PICK_TIMER;
-      setMaxTimer(timer);
-    }
-  }, [draftState]);
-
-  // Smooth countdown timer - updates more frequently for smoother animation
-  useEffect(() => {
-    if (!draftState || draftState.timer === undefined) return;
-
-    // Use the backend timer as the source of truth when it updates
-    const startTime = Date.now();
-    const startTimer = draftState.timer;
-
-    const interval = setInterval(() => {
-      const elapsed = (Date.now() - startTime) / 1000;
-      const newTimer = Math.max(0, startTimer - elapsed);
-      setCurrentTimer(newTimer);
-    }, 50); // Update every 50ms for smoother animation
-
-    return () => clearInterval(interval);
-  }, [draftState?.timer]);
 
   const getChampionCenteredImageUrl = (championId: number): string => {
     const champ = champions.get(championId);
@@ -51,23 +19,10 @@ export default function DraftView({ draftState, champions }: DraftViewProps) {
     return champ ? champ.name : `Champion ${championId}`;
   };
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
   if (!draftState) return null;
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <DraftHeader
-        timer={draftState.timer}
-        currentTimer={currentTimer}
-        maxTimer={maxTimer}
-        formatTime={formatTime}
-      />
-
       {/* Main Draft Area */}
       <div className="flex-1 flex overflow-hidden min-w-0">
         {draftState.teams.length >= 2 ? (
