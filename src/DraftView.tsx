@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { DraftState, Champion } from "./types";
+import type { DraftState, Champion, Team, Cell } from "./types";
 import TeamView from "./components/draft/TeamView";
 import RecommendationsPanel from "./components/draft/RecommendationsPanel";
 import DraftHeader from "./components/draft/DraftHeader";
@@ -12,39 +12,50 @@ interface DraftViewProps {
   formatTime?: (seconds: number) => string;
 }
 
+const ROLES = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"];
+
 export default function DraftView({ draftState, champions, currentTimer, maxTimer, formatTime }: DraftViewProps) {
   // State for manually selected roles (cellId -> role)
   const [manualRoles, setManualRoles] = useState<Map<number, string>>(new Map());
-  // Store the current player's cell ID (persists throughout the draft)
-  const [currentPlayerCellId, setCurrentPlayerCellId] = useState<number | null>(null);
-  // Store which cell the user clicked to set role (before we know their actual cell)
-  const [selectedCellForRole, setSelectedCellForRole] = useState<number | null>(null);
+  // Store the current player's cell ID from LCU (persists throughout the draft)
+  const currentPlayerCellId = draftState?.local_player_cell_id ?? null;
 
-  // Detect and store the current player's cell ID when they have an active action
+  // Auto-select an available role for the current player if they don't have one
   useEffect(() => {
-    if (draftState) {
-      const activeAction = draftState.actions.find(
-        (action) => action.is_in_progress && !action.completed
-      );
-      if (activeAction?.actor_cell_id && activeAction.actor_cell_id !== currentPlayerCellId) {
-        const actorCellId = activeAction.actor_cell_id;
-        setCurrentPlayerCellId(actorCellId);
-        // If user had selected a role on a different cell, migrate it
-        if (selectedCellForRole && selectedCellForRole !== actorCellId) {
-          const roleOnSelectedCell = manualRoles.get(selectedCellForRole);
-          if (roleOnSelectedCell) {
-            setManualRoles((prev) => {
-              const newMap = new Map(prev);
-              newMap.delete(selectedCellForRole);
-              newMap.set(actorCellId, roleOnSelectedCell);
-              return newMap;
-            });
-          }
-        }
-        setSelectedCellForRole(actorCellId);
+    if (!draftState || !currentPlayerCellId) return;
+
+    // Find the current player's cell
+    let currentCell: { team: Team; cell: Cell } | null = null;
+    for (const team of draftState.teams) {
+      const cell = team.cells.find(c => c.cell_id === currentPlayerCellId);
+      if (cell) {
+        currentCell = { team, cell };
+        break;
       }
     }
-  }, [draftState, currentPlayerCellId, selectedCellForRole, manualRoles]);
+
+    if (!currentCell) return;
+
+    // Check if player already has a role (assigned or manual)
+    const hasRole = currentCell.cell.assigned_position || manualRoles.get(currentPlayerCellId);
+    if (hasRole) return;
+
+    // Get roles taken by teammates
+    const takenRoles = currentCell.team.cells
+      .filter(c => c.cell_id !== currentPlayerCellId)
+      .map(c => c.assigned_position || manualRoles.get(c.cell_id))
+      .filter((role): role is string => role !== undefined && role !== "");
+
+    // Find first available role
+    const availableRole = ROLES.find(role => !takenRoles.includes(role));
+    if (availableRole) {
+      setManualRoles((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(currentPlayerCellId, availableRole);
+        return newMap;
+      });
+    }
+  }, [draftState, currentPlayerCellId, manualRoles]);
 
   const getChampionCenteredImageUrl = (championId: number): string => {
     const champ = champions.get(championId);
@@ -63,22 +74,15 @@ export default function DraftView({ draftState, champions, currentTimer, maxTime
       newMap.set(cellId, role);
       return newMap;
     });
-    // Remember which cell the user selected a role for
-    if (!currentPlayerCellId) {
-      setSelectedCellForRole(cellId);
-    }
   };
 
   // Get current player's role for AI recommendations
   const getCurrentPlayerRole = (): string | undefined => {
-    if (!draftState) return undefined;
-    
-    const cellIdToCheck = currentPlayerCellId || selectedCellForRole;
-    if (!cellIdToCheck) return undefined;
+    if (!draftState || !currentPlayerCellId) return undefined;
 
     // Find the cell
     for (const team of draftState.teams) {
-      const cell = team.cells.find(c => c.cell_id === cellIdToCheck);
+      const cell = team.cells.find(c => c.cell_id === currentPlayerCellId);
       if (cell) {
         // Return manual role if set, otherwise assigned_position
         return manualRoles.get(cell.cell_id) || cell.assigned_position;
@@ -116,7 +120,6 @@ export default function DraftView({ draftState, champions, currentTimer, maxTime
                 manualRoles={manualRoles}
                 onRoleSelect={handleRoleSelect}
                 currentPlayerCellId={currentPlayerCellId}
-                selectedCellForRole={selectedCellForRole}
               />
               
               {/* Center VS Divider */}
@@ -138,7 +141,6 @@ export default function DraftView({ draftState, champions, currentTimer, maxTime
                 manualRoles={manualRoles}
                 onRoleSelect={handleRoleSelect}
                 currentPlayerCellId={currentPlayerCellId}
-                selectedCellForRole={selectedCellForRole}
               />
             </>
           ) : draftState.teams.length === 1 ? (
@@ -153,7 +155,6 @@ export default function DraftView({ draftState, champions, currentTimer, maxTime
                 manualRoles={manualRoles}
                 onRoleSelect={handleRoleSelect}
                 currentPlayerCellId={currentPlayerCellId}
-                selectedCellForRole={selectedCellForRole}
               />
               <div className="flex-1" />
             </div>

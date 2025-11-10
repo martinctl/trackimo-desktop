@@ -8,6 +8,7 @@ pub struct DraftState {
     pub phase: String,
     pub teams: Vec<Team>,
     pub actions: Vec<DraftAction>,
+    pub local_player_cell_id: Option<i64>, // The current player's cell ID from LCU
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,11 +318,15 @@ pub fn parse_draft_session(session: &serde_json::Value) -> Result<DraftState, St
         }
     }
 
+    // Get local player's cell ID from the session
+    let local_player_cell_id = session["localPlayerCellId"].as_i64();
+
     Ok(DraftState {
         game_id,
         timer,
         phase,
         teams,
         actions,
+        local_player_cell_id,
     })
 }

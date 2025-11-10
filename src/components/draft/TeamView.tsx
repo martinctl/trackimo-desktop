@@ -2,8 +2,6 @@ import type { Team, DraftState } from "../../types";
 import PickCard from "./PickCard";
 import BanSlot from "./BanSlot";
 
-const POSITION_ORDER = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"];
-
 interface TeamViewProps {
   team: Team;
   isBlue: boolean;
@@ -13,7 +11,6 @@ interface TeamViewProps {
   manualRoles: Map<number, string>;
   onRoleSelect: (cellId: number, role: string) => void;
   currentPlayerCellId: number | null;
-  selectedCellForRole: number | null;
 }
 
 export default function TeamView({
@@ -25,7 +22,6 @@ export default function TeamView({
   manualRoles,
   onRoleSelect,
   currentPlayerCellId,
-  selectedCellForRole,
 }: TeamViewProps) {
 
   // Find which team the current player is on
@@ -53,13 +49,8 @@ export default function TeamView({
       .filter((role): role is string => role !== undefined && role !== "");
   };
 
-  const sortedCells = [...team.cells].sort((a, b) => {
-    const aPos = a.assigned_position || manualRoles.get(a.cell_id) || "";
-    const bPos = b.assigned_position || manualRoles.get(b.cell_id) || "";
-    const aIdx = POSITION_ORDER.indexOf(aPos);
-    const bIdx = POSITION_ORDER.indexOf(bPos);
-    return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
-  });
+  // Keep original order from draft (don't reorder)
+  const sortedCells = team.cells;
 
   const teamColor = isBlue ? "bg-blue-500/15" : "bg-red-500/15";
   const teamBorderColor = isBlue ? "border-blue-400/25" : "border-red-400/25";
@@ -97,21 +88,16 @@ export default function TeamView({
           
           const champIdToDisplay = lockedChampId ?? preselectedChampId;
           
-          // Active selecting: player's turn and has preselected champion
-          const isActivelySelecting = Boolean(activePickAction && preselectedChampId != null && preselectedChampId !== 0 && !lockedChampId);
+          // Active selecting: player's turn (even if no champion selected yet)
+          const isActivelySelecting = Boolean(activePickAction && !lockedChampId);
           // Pre-locked: has preselected champion but not their turn
           const isPreLocked = Boolean(!activePickAction && preselectedChampId != null && preselectedChampId !== 0 && !lockedChampId);
           const isLocked = Boolean(lockedChampId != null && lockedChampId !== 0);
 
           // Get role: prefer assigned_position, fallback to manual role
           const displayRole = cell.assigned_position || manualRoles.get(cell.cell_id);
-          // Allow role selection if: 
-          // 1. This is the confirmed player cell, OR
-          // 2. No player cell detected yet and this cell has a selected role, OR  
-          // 3. No player cell detected yet and this is first cell on player team
-          const isCurrentPlayer = currentPlayerCellId 
-            ? cell.cell_id === currentPlayerCellId
-            : (cell.cell_id === selectedCellForRole || (isPlayerTeam && !selectedCellForRole));
+          // Check if this is the current player's cell
+          const isCurrentPlayer = currentPlayerCellId !== null && cell.cell_id === currentPlayerCellId;
           const takenRoles = getTakenRoles(cell.cell_id);
 
           return (

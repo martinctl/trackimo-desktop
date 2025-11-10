@@ -29,23 +29,17 @@ export default function RecommendationsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Get the current player's cell ID
-  const getCurrentPlayerCellId = (): number | null => {
-    const activeAction = draftState.actions.find(
-      (action) => action.type === "pick" && action.is_in_progress && !action.completed
-    );
-    return activeAction?.actor_cell_id ?? null;
-  };
+  // Get the current player's cell ID from LCU
+  const currentPlayerCellId = draftState.local_player_cell_id ?? null;
 
   // Get team prelocks (excluding self)
   const getTeamPrelocks = (): number[] => {
-    const currentCellId = getCurrentPlayerCellId();
-    if (currentCellId === null) return [];
+    if (currentPlayerCellId === null) return [];
 
     // Find which team the current player is on
     let currentTeamId: number | null = null;
     for (const team of draftState.teams) {
-      if (team.cells.some((cell) => cell.cell_id === currentCellId)) {
+      if (team.cells.some((cell) => cell.cell_id === currentPlayerCellId)) {
         currentTeamId = team.team_id;
         break;
       }
@@ -60,7 +54,7 @@ export default function RecommendationsPanel({
     const prelocks: number[] = [];
     for (const cell of team.cells) {
       // Skip self and cells that are already locked
-      if (cell.cell_id === currentCellId || cell.champion_id) continue;
+      if (cell.cell_id === currentPlayerCellId || cell.champion_id) continue;
       
       // Add prelock if it exists
       if (cell.selected_champion_id && cell.selected_champion_id > 0) {
@@ -75,12 +69,11 @@ export default function RecommendationsPanel({
 
   // Check if the current player has locked their champion
   const hasPlayerLockedChampion = (): boolean => {
-    const currentCellId = getCurrentPlayerCellId();
-    if (currentCellId === null) return false;
+    if (currentPlayerCellId === null) return false;
 
     // Find the player's cell
     for (const team of draftState.teams) {
-      const cell = team.cells.find((c) => c.cell_id === currentCellId);
+      const cell = team.cells.find((c) => c.cell_id === currentPlayerCellId);
       if (cell) {
         // Player has locked if champion_id is set (not null/undefined/0)
         return Boolean(cell.champion_id && cell.champion_id !== 0);
@@ -90,7 +83,13 @@ export default function RecommendationsPanel({
   };
 
   useEffect(() => {
-    // Fetch recommendations on any draft state change
+    // Only fetch recommendations if the current player hasn't locked their champion
+    if (!currentPlayerCellId || hasPlayerLockedChampion()) {
+      setRecommendations(null);
+      return;
+    }
+
+    // Fetch recommendations on any draft state change (always show for current player)
     const fetchRecommendations = async () => {
       setLoading(true);
       setError(null);
@@ -113,10 +112,10 @@ export default function RecommendationsPanel({
     // Debounce to avoid too many requests
     const timeoutId = setTimeout(fetchRecommendations, 300);
     return () => clearTimeout(timeoutId);
-  }, [draftState, currentPlayerRole]);
+  }, [draftState, currentPlayerRole, currentPlayerCellId]);
 
-  // Hide panel if the current player has locked their champion
-  if (hasPlayerLockedChampion()) {
+  // Hide panel only if the current player has locked their champion or no current player
+  if (!currentPlayerCellId || hasPlayerLockedChampion()) {
     return null;
   }
 

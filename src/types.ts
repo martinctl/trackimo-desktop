@@ -4,6 +4,7 @@ export interface DraftState {
   phase: string;
   teams: Team[];
   actions: DraftAction[];
+  local_player_cell_id?: number; // The current player's cell ID from LCU
 }
 
 export interface Team {
