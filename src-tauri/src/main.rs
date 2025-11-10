@@ -3,6 +3,7 @@
 
 mod champions;
 mod lcu;
+mod model;
 
 use champions::cache::ChampionCache;
 use lcu::client::LcuClient;
@@ -27,6 +28,18 @@ fn main() {
                 let _ = cache_guard.load_from_cache();
             }
 
+            // Initialize the draft recommendation model
+            match model::initialize_model(app.handle()) {
+                Ok(model) => {
+                    app.manage(model);
+                    println!("Draft recommendation model loaded successfully");
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to load draft recommendation model: {}", e);
+                    eprintln!("Model recommendations will not be available");
+                }
+            }
+
             Ok(())
         })
         .manage(Arc::new(TokioMutex::new(LcuClient::new())))
@@ -46,6 +59,7 @@ fn main() {
             champions::cache::get_champion_by_id,
             champions::cache::get_all_champions,
             champions::cache::get_champion_version,
+            model::get_draft_recommendations,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

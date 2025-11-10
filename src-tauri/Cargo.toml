@@ -21,6 +21,8 @@ tokio = { version = "1", features = ["full", "sync"] }
 dirs = "4.0"
 regex = "1.10"
 tauri-plugin-shell = "^2"
+ort = { version = "1.16", features = ["download-binaries"] }
+ndarray = "0.15"
 
 [target.'cfg(windows)'.dependencies]
 tauri-plugin-updater = "^2"
