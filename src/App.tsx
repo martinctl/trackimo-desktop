@@ -191,8 +191,8 @@ function App() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Determine current view
-  const currentView = draftState ? "draft" : (summonerInfo ? "dashboard" : "welcome");
+  // Determine current view for header
+  const headerView = draftState ? "welcome" : (summonerInfo ? "dashboard" : "welcome");
 
   const checkForUpdatesSilently = async () => {
     try {
@@ -259,16 +259,12 @@ function App() {
 
   return (
     <div className="relative flex flex-col h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
-      {/* Header */}
+      {/* Header - always shown for window controls, content depends on view */}
       <Header
-        view={currentView}
+        view={headerView}
         summonerInfo={summonerInfo}
         rankedStats={rankedStats}
         championVersion={championVersion}
-        draftState={draftState}
-        currentTimer={draftTimer?.current}
-        maxTimer={draftTimer?.max}
-        formatTime={formatTime}
       />
 
       {/* Update notification */}
@@ -305,6 +301,9 @@ function App() {
           <DraftView 
             draftState={draftState} 
             champions={champions}
+            currentTimer={draftTimer?.current}
+            maxTimer={draftTimer?.max}
+            formatTime={formatTime}
           />
         </div>
       )}

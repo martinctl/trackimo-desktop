@@ -1,17 +1,12 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useState, useEffect } from "react";
-import type { SummonerInfo, RankedStats, DraftState } from "../types";
-import TimerBar from "./draft/TimerBar";
+import type { SummonerInfo, RankedStats } from "../types";
 
 interface HeaderProps {
-  view: "welcome" | "dashboard" | "draft";
+  view: "welcome" | "dashboard";
   summonerInfo?: SummonerInfo | null;
   rankedStats?: RankedStats[];
   championVersion?: string;
-  draftState?: DraftState | null;
-  currentTimer?: number;
-  maxTimer?: number;
-  formatTime?: (seconds: number) => string;
 }
 
 export default function Header({
@@ -19,10 +14,6 @@ export default function Header({
   summonerInfo,
   rankedStats = [],
   championVersion = "latest",
-  draftState,
-  currentTimer,
-  maxTimer,
-  formatTime
 }: HeaderProps) {
   const [isMaximized, setIsMaximized] = useState(false);
 
@@ -122,22 +113,6 @@ export default function Header({
       </div>
 
       {/* Content Header - changes based on view */}
-      {view === "draft" && draftState && currentTimer !== undefined && maxTimer !== undefined && formatTime && (
-        <div className="border-t border-gray-700/20">
-          {/* Timer display */}
-          <div className="flex items-center justify-center px-6 py-4">
-            <div className="text-3xl font-mono font-bold tabular-nums text-white">
-              {formatTime(currentTimer)}
-            </div>
-          </div>
-          
-          {/* Timer bar */}
-          <div className="w-full h-2 bg-gray-800/80 backdrop-blur-sm overflow-hidden border-t border-gray-700/50">
-            <TimerBar currentTimer={currentTimer} maxTimer={maxTimer} />
-          </div>
-        </div>
-      )}
-
       {view === "dashboard" && summonerInfo && (
         <div className="border-t border-gray-700/20">
           <div className="max-w-[1600px] mx-auto px-8 py-4 flex items-center justify-between">
