@@ -27,9 +27,15 @@ impl DraftMonitor {
         let mut last_state: Option<String> = None;
         let mut last_timer: Option<f64> = None;
         let mut last_phase: Option<String> = None;
+        let mut is_first_poll = true;
 
         loop {
-            interval_timer.tick().await;
+            // On first iteration, check immediately; subsequent iterations wait for the interval
+            if !is_first_poll {
+                interval_timer.tick().await;
+            } else {
+                is_first_poll = false;
+            }
 
             match self.get_current_state().await {
                 Ok(state) => {

@@ -39,10 +39,7 @@ function App() {
         await loadChampions();
         setTauriReady(true);
         
-        // Auto-connect to LCU
-        await autoConnect();
-        
-        // Listen for draft state changes
+        // Listen for draft state changes BEFORE connecting to avoid race condition
         const unlistenDraft = await listen<DraftState>("draft-state-changed", (event) => {
           draftStateRef.current = event.payload;
           setDraftState(event.payload);
@@ -61,6 +58,9 @@ function App() {
             // Ignore errors - LCU might be disconnected
           }
         }, 2000);
+        
+        // Auto-connect to LCU (after listener is set up)
+        await autoConnect();
 
         return () => {
           unlistenDraft();
@@ -132,7 +132,7 @@ function App() {
   const autoConnect = async () => {
     try {
       // Try to get gameflow phase to check if LCU is connected
-      await invoke("get_gameflow_phase");
+      const phase = await invoke("get_gameflow_phase") as string;
       const wasConnected = previousConnectedRef.current;
       previousConnectedRef.current = true;
       
@@ -140,6 +140,17 @@ function App() {
       if (!monitoringStartedRef.current) {
         await invoke("start_draft_monitoring");
         monitoringStartedRef.current = true;
+        
+        // Force immediate detection if we're already in champ select
+        if (phase === "ChampSelect" || phase === "ChampionSelect") {
+          try {
+            const currentDraftState: DraftState = await invoke("get_draft_state");
+            draftStateRef.current = currentDraftState;
+            setDraftState(currentDraftState);
+          } catch (e) {
+            // Not in draft or error fetching - monitor will handle it
+          }
+        }
       }
       
       // Fetch player info if we just connected or if we don't have data yet
