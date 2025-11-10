@@ -82,6 +82,40 @@ export default function RecommendationsPanel({
     return false;
   };
 
+  // Create a dependency string that tracks teammate pre-selections and locked champions
+  // This ensures recommendations update when teammates hover over champions
+  const getTeammateSelectionsKey = (): string => {
+    if (currentPlayerCellId === null) return "";
+
+    // Find which team the current player is on
+    let currentTeamId: number | null = null;
+    for (const team of draftState.teams) {
+      if (team.cells.some((cell) => cell.cell_id === currentPlayerCellId)) {
+        currentTeamId = team.team_id;
+        break;
+      }
+    }
+
+    if (currentTeamId === null) return "";
+
+    const team = draftState.teams.find((t) => t.team_id === currentTeamId);
+    if (!team) return "";
+
+    // Create a key from all teammate selections (both locked and pre-selected)
+    const selections = team.cells
+      .filter(c => c.cell_id !== currentPlayerCellId)
+      .map(c => {
+        const locked = c.champion_id || 0;
+        const preselected = c.selected_champion_id || 0;
+        return `${c.cell_id}:${locked}:${preselected}`;
+      })
+      .join("|");
+    
+    return selections;
+  };
+
+  const teammateSelectionsKey = getTeammateSelectionsKey();
+
   useEffect(() => {
     // Only fetch recommendations if the current player hasn't locked their champion
     if (!currentPlayerCellId || hasPlayerLockedChampion()) {
@@ -112,7 +146,7 @@ export default function RecommendationsPanel({
     // Debounce to avoid too many requests
     const timeoutId = setTimeout(fetchRecommendations, 300);
     return () => clearTimeout(timeoutId);
-  }, [draftState, currentPlayerRole, currentPlayerCellId]);
+  }, [draftState, currentPlayerRole, currentPlayerCellId, teammateSelectionsKey]);
 
   // Hide panel only if the current player has locked their champion or no current player
   if (!currentPlayerCellId || hasPlayerLockedChampion()) {

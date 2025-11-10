@@ -182,30 +182,64 @@ impl DraftRecommendationModel {
         let blue_team = draft_state.teams.iter().find(|t| t.team_id == 100);
         let red_team = draft_state.teams.iter().find(|t| t.team_id == 200);
 
-        let blue_picks: Vec<u32> = blue_team
+        // Collect locked picks
+        let blue_locked: Vec<u32> = blue_team
             .map(|t| t.picks.iter().map(|p| p.champion_id as u32).collect())
             .unwrap_or_default();
-        let red_picks: Vec<u32> = red_team
+        let red_locked: Vec<u32> = red_team
             .map(|t| t.picks.iter().map(|p| p.champion_id as u32).collect())
             .unwrap_or_default();
+        
+        // Collect pre-selected champions (hovered but not locked) from cells
+        let mut blue_preselected: Vec<u32> = Vec::new();
+        if let Some(team) = blue_team {
+            for cell in &team.cells {
+                // Include pre-selected if not already locked
+                if let Some(selected_id) = cell.selected_champion_id {
+                    if cell.champion_id.is_none() && selected_id > 0 {
+                        blue_preselected.push(selected_id as u32);
+                    }
+                }
+            }
+        }
+        
+        let mut red_preselected: Vec<u32> = Vec::new();
+        if let Some(team) = red_team {
+            for cell in &team.cells {
+                // Include pre-selected if not already locked
+                if let Some(selected_id) = cell.selected_champion_id {
+                    if cell.champion_id.is_none() && selected_id > 0 {
+                        red_preselected.push(selected_id as u32);
+                    }
+                }
+            }
+        }
+        
+        // Combine locked and pre-selected for feature encoding
+        let mut blue_picks = blue_locked.clone();
+        blue_picks.extend_from_slice(&blue_preselected);
+        
+        let mut red_picks = red_locked.clone();
+        red_picks.extend_from_slice(&red_preselected);
+        
         let all_bans: Vec<u32> = draft_state
             .teams
             .iter()
             .flat_map(|t| t.bans.iter().map(|b| b.champion_id as u32))
             .collect();
 
-        // Champion encodings (one-hot)
+        // Champion encodings (one-hot) - includes both locked and pre-selected
         features.extend(self.encode_champion_list(&blue_picks));
         features.extend(self.encode_champion_list(&red_picks));
         features.extend(self.encode_champion_list(&all_bans));
 
-        // Calculate step (total picks + bans completed)
-        let step = blue_picks.len() + red_picks.len() + all_bans.len();
+        // Calculate step (total picks + bans completed) - use locked picks for step count
+        let step = blue_locked.len() + red_locked.len() + all_bans.len();
 
-        // Draft progress
+        // Draft progress - use locked picks for progress
         features.push(step as f32 / 10.0); // Step normalized
-        features.push(blue_picks.len() as f32 / 5.0); // Blue progress
-        features.push(red_picks.len() as f32 / 5.0); // Red progress
+        features.push(blue_locked.len() as f32 / 5.0); // Blue progress
+        features.push(red_locked.len() as f32 / 5.0); // Red progress
 
         // Determine current team and role (use player_role if provided)
         let (current_team, role) = self.get_current_team_and_role(draft_state, player_role);
@@ -269,7 +303,7 @@ impl DraftRecommendationModel {
     }
 
     fn get_available_champions_mask(&self, draft_state: &DraftState) -> Vec<f32> {
-        let unavailable: HashSet<u32> = draft_state
+        let mut unavailable: HashSet<u32> = draft_state
             .teams
             .iter()
             .flat_map(|t| {
@@ -279,6 +313,22 @@ impl DraftRecommendationModel {
                     .chain(t.bans.iter().map(|b| b.champion_id as u32))
             })
             .collect();
+        
+        // Also exclude pre-selected champions (hovered but not locked)
+        for team in &draft_state.teams {
+            for cell in &team.cells {
+                // Add locked champions (already included above, but check anyway)
+                if let Some(champ_id) = cell.champion_id {
+                    unavailable.insert(champ_id as u32);
+                }
+                // Add pre-selected champions
+                if let Some(selected_id) = cell.selected_champion_id {
+                    if selected_id > 0 {
+                        unavailable.insert(selected_id as u32);
+                    }
+                }
+            }
+        }
 
         (0..self.metadata.num_champions)
             .map(|idx| {
