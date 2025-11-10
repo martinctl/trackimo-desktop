@@ -97,7 +97,7 @@ export default function TeamView({
           // Get role: prefer assigned_position, fallback to manual role
           const displayRole = cell.assigned_position || manualRoles.get(cell.cell_id);
           // Check if this is the current player's cell
-          const isCurrentPlayer = currentPlayerCellId !== null && cell.cell_id === currentPlayerCellId;
+          const isCurrentPlayer = currentPlayerCellId != null && cell.cell_id === currentPlayerCellId;
           const takenRoles = getTakenRoles(cell.cell_id);
 
           return (

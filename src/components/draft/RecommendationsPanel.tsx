@@ -34,7 +34,7 @@ export default function RecommendationsPanel({
 
   // Get team prelocks (excluding self)
   const getTeamPrelocks = (): number[] => {
-    if (currentPlayerCellId === null) return [];
+    if (currentPlayerCellId == null) return [];
 
     // Find which team the current player is on
     let currentTeamId: number | null = null;
@@ -69,7 +69,7 @@ export default function RecommendationsPanel({
 
   // Check if the current player has locked their champion
   const hasPlayerLockedChampion = (): boolean => {
-    if (currentPlayerCellId === null) return false;
+    if (currentPlayerCellId == null) return false;
 
     // Find the player's cell
     for (const team of draftState.teams) {
@@ -85,7 +85,7 @@ export default function RecommendationsPanel({
   // Create a dependency string that tracks teammate pre-selections and locked champions
   // This ensures recommendations update when teammates hover over champions
   const getTeammateSelectionsKey = (): string => {
-    if (currentPlayerCellId === null) return "";
+    if (currentPlayerCellId == null) return "";
 
     // Find which team the current player is on
     let currentTeamId: number | null = null;
@@ -118,7 +118,7 @@ export default function RecommendationsPanel({
 
   useEffect(() => {
     // Only fetch recommendations if the current player hasn't locked their champion
-    if (!currentPlayerCellId || hasPlayerLockedChampion()) {
+    if (currentPlayerCellId == null || hasPlayerLockedChampion()) {
       setRecommendations(null);
       return;
     }
@@ -149,7 +149,7 @@ export default function RecommendationsPanel({
   }, [draftState, currentPlayerRole, currentPlayerCellId, teammateSelectionsKey]);
 
   // Hide panel only if the current player has locked their champion or no current player
-  if (!currentPlayerCellId || hasPlayerLockedChampion()) {
+  if (currentPlayerCellId == null || hasPlayerLockedChampion()) {
     return null;
   }
 

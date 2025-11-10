@@ -22,7 +22,7 @@ export default function DraftView({ draftState, champions, currentTimer, maxTime
 
   // Auto-select an available role for the current player if they don't have one
   useEffect(() => {
-    if (!draftState || !currentPlayerCellId) return;
+    if (!draftState || currentPlayerCellId == null) return;
 
     // Find the current player's cell
     let currentCell: { team: Team; cell: Cell } | null = null;
@@ -78,7 +78,7 @@ export default function DraftView({ draftState, champions, currentTimer, maxTime
 
   // Get current player's role for AI recommendations
   const getCurrentPlayerRole = (): string | undefined => {
-    if (!draftState || !currentPlayerCellId) return undefined;
+    if (!draftState || currentPlayerCellId == null) return undefined;
 
     // Find the cell
     for (const team of draftState.teams) {

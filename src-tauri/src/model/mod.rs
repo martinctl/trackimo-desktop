@@ -161,9 +161,9 @@ impl DraftRecommendationModel {
         let win_prob_slice = win_probability.as_slice().ok_or("Failed to get win_probability slice")?;
         let win_prob = win_prob_slice[0];
         
-        // Determine current team from draft state
-        let current_team = self.get_current_team(draft_state);
-        let win_prob_adjusted = if current_team == 200 {
+        // Determine player's team (not the team currently picking!)
+        let player_team = self.get_player_team(draft_state);
+        let win_prob_adjusted = if player_team == 200 {
             1.0 - win_prob // Red team - invert blue team prediction
         } else {
             win_prob
@@ -346,73 +346,50 @@ impl DraftRecommendationModel {
             .collect()
     }
 
-    fn get_current_team(&self, draft_state: &DraftState) -> i64 {
-        // Find the action that is currently in progress
-        if let Some(action) = draft_state.actions.iter().find(|a| a.is_in_progress) {
-            // Determine team from actor_cell_id
-            if let Some(cell_id) = action.actor_cell_id {
-                // Check which team this cell belongs to
-                for team in &draft_state.teams {
-                    if team.cells.iter().any(|c| c.cell_id == cell_id) {
-                        return team.team_id;
-                    }
-                }
-                // Fallback: Cells 0-4 are typically team 100, 5-9 are team 200
-                if cell_id < 5 {
-                    return 100;
-                } else {
-                    return 200;
-                }
-            }
-        }
-
-        // Fallback: determine from phase or pick count
-        let blue_picks = draft_state
-            .teams
-            .iter()
-            .find(|t| t.team_id == 100)
-            .map(|t| t.picks.len())
-            .unwrap_or(0);
-        let red_picks = draft_state
-            .teams
-            .iter()
-            .find(|t| t.team_id == 200)
-            .map(|t| t.picks.len())
-            .unwrap_or(0);
-
-        // In draft, teams alternate. Blue picks first, then red, etc.
-        // So if blue has more picks, it's red's turn, and vice versa
-        if blue_picks > red_picks {
-            200
-        } else {
-            100
-        }
-    }
-
     fn get_current_team_and_role(&self, draft_state: &DraftState, player_role: Option<&str>) -> (i64, String) {
-        let current_team = self.get_current_team(draft_state);
+        // Determine the player's actual team from local_player_cell_id
+        // This is the team we're generating recommendations FOR, not the team currently picking
+        let player_team = self.get_player_team(draft_state);
         
         // If player role is provided by the frontend, use it (highest priority)
         if let Some(role) = player_role {
-            return (current_team, role.to_uppercase());
+            return (player_team, role.to_uppercase());
         }
         
-        // Try to get role from the current action's cell
-        if let Some(action) = draft_state.actions.iter().find(|a| a.is_in_progress) {
-            if let Some(cell_id) = action.actor_cell_id {
-                for team in &draft_state.teams {
-                    if let Some(cell) = team.cells.iter().find(|c| c.cell_id == cell_id) {
-                        if let Some(position) = &cell.assigned_position {
-                            // Normalize to uppercase for consistency
-                            return (current_team, position.to_uppercase());
-                        }
+        // Try to get role from the player's cell
+        if let Some(player_cell_id) = draft_state.local_player_cell_id {
+            for team in &draft_state.teams {
+                if let Some(cell) = team.cells.iter().find(|c| c.cell_id == player_cell_id) {
+                    if let Some(position) = &cell.assigned_position {
+                        // Normalize to uppercase for consistency
+                        return (player_team, position.to_uppercase());
                     }
                 }
             }
         }
 
         // Fallback: default to TOP
-        (current_team, "TOP".to_string())
+        (player_team, "TOP".to_string())
+    }
+    
+    fn get_player_team(&self, draft_state: &DraftState) -> i64 {
+        // Get the player's team from their cell_id
+        if let Some(player_cell_id) = draft_state.local_player_cell_id {
+            for team in &draft_state.teams {
+                if team.cells.iter().any(|c| c.cell_id == player_cell_id) {
+                    return team.team_id;
+                }
+            }
+            // Fallback based on cell_id: 0-4 are team 100, 5-9 are team 200
+            if player_cell_id < 5 {
+                return 100;
+            } else {
+                return 200;
+            }
+        }
+        
+        // Ultimate fallback: assume blue team
+        100
     }
 }
 
