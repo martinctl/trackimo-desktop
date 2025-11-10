@@ -460,29 +460,14 @@ pub fn initialize_model(app_handle: &tauri::AppHandle) -> Result<Arc<DraftRecomm
     let exe_model = exe_dir.as_ref().map(|d| d.join("model").join("model.onnx"));
     let exe_metadata = exe_dir.as_ref().map(|d| d.join("model").join("metadata.json"));
     
-    // Debug: Log paths being checked
-    eprintln!("Checking model paths:");
-    eprintln!("  CWD model: {:?} (exists: {})", cwd_model, cwd_model.exists());
-    if let Some(ref rm) = resource_model {
-        eprintln!("  Resource model: {:?} (exists: {})", rm, rm.exists());
-    } else {
-        eprintln!("  Resource directory: {:?}", resource_dir_result);
-    }
-    if let Some(ref em) = exe_model {
-        eprintln!("  Exe dir model: {:?} (exists: {})", em, em.exists());
-    }
-    
     // Find the first existing model/metadata pair
     let (model_path, metadata_path) = if cwd_model.exists() && cwd_metadata.exists() {
-        eprintln!("Using CWD model path");
         (cwd_model, cwd_metadata)
     } else if let (Some(ref rm), Some(ref rm_meta)) = (resource_model, resource_metadata) {
         if rm.exists() && rm_meta.exists() {
-            eprintln!("Using resource directory model path");
             (rm.clone(), rm_meta.clone())
         } else if let (Some(ref em), Some(ref em_meta)) = (exe_model, exe_metadata) {
             if em.exists() && em_meta.exists() {
-                eprintln!("Using executable directory model path");
                 (em.clone(), em_meta.clone())
             } else {
                 return Err(format!(
@@ -498,7 +483,6 @@ pub fn initialize_model(app_handle: &tauri::AppHandle) -> Result<Arc<DraftRecomm
         }
     } else if let (Some(ref em), Some(ref em_meta)) = (exe_model, exe_metadata) {
         if em.exists() && em_meta.exists() {
-            eprintln!("Using executable directory model path");
             (em.clone(), em_meta.clone())
         } else {
             return Err(format!(
