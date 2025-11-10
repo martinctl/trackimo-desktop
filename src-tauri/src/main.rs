@@ -29,16 +29,19 @@ fn main() {
             }
 
             // Initialize the draft recommendation model
-            match model::initialize_model(app.handle()) {
+            let model = match model::initialize_model(app.handle()) {
                 Ok(model) => {
-                    app.manage(model);
                     println!("Draft recommendation model loaded successfully");
+                    Some(model)
                 }
                 Err(e) => {
                     eprintln!("Warning: Failed to load draft recommendation model: {}", e);
                     eprintln!("Model recommendations will not be available");
+                    None
                 }
-            }
+            };
+            // Always manage the model state (even if None) so the command can access it
+            app.manage(std::sync::Mutex::new(model));
 
             Ok(())
         })

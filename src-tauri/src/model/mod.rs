@@ -371,8 +371,14 @@ pub async fn get_draft_recommendations(
     draft_state: DraftState,
     top_k: Option<usize>,
     player_role: Option<String>,
-    model: tauri::State<'_, Arc<DraftRecommendationModel>>,
+    model: tauri::State<'_, std::sync::Mutex<Option<Arc<DraftRecommendationModel>>>>,
 ) -> Result<Recommendations, String> {
+    let model_guard = model.lock()
+        .map_err(|e| format!("Failed to lock model state: {:?}", e))?;
+    
+    let model = model_guard.as_ref()
+        .ok_or_else(|| "Draft recommendation model is not available. Model files may be missing.".to_string())?;
+    
     let top_k = top_k.unwrap_or(5);
     model
         .get_recommendations(&draft_state, top_k, player_role.as_deref())
@@ -387,14 +393,13 @@ pub fn initialize_model(app_handle: &tauri::AppHandle) -> Result<Arc<DraftRecomm
     let cwd_metadata = PathBuf::from("model/metadata.json");
     
     // 2. Try resource directory (production)
-    let resource_model = app_handle
-        .path()
-        .resource_dir()
+    let resource_dir_result = app_handle.path().resource_dir();
+    let resource_model = resource_dir_result
+        .as_ref()
         .ok()
         .map(|d| d.join("model").join("model.onnx"));
-    let resource_metadata = app_handle
-        .path()
-        .resource_dir()
+    let resource_metadata = resource_dir_result
+        .as_ref()
         .ok()
         .map(|d| d.join("model").join("metadata.json"));
     
@@ -405,29 +410,57 @@ pub fn initialize_model(app_handle: &tauri::AppHandle) -> Result<Arc<DraftRecomm
     let exe_model = exe_dir.as_ref().map(|d| d.join("model").join("model.onnx"));
     let exe_metadata = exe_dir.as_ref().map(|d| d.join("model").join("metadata.json"));
     
+    // Debug: Log paths being checked
+    eprintln!("Checking model paths:");
+    eprintln!("  CWD model: {:?} (exists: {})", cwd_model, cwd_model.exists());
+    if let Some(ref rm) = resource_model {
+        eprintln!("  Resource model: {:?} (exists: {})", rm, rm.exists());
+    } else {
+        eprintln!("  Resource directory: {:?}", resource_dir_result);
+    }
+    if let Some(ref em) = exe_model {
+        eprintln!("  Exe dir model: {:?} (exists: {})", em, em.exists());
+    }
+    
     // Find the first existing model/metadata pair
     let (model_path, metadata_path) = if cwd_model.exists() && cwd_metadata.exists() {
+        eprintln!("Using CWD model path");
         (cwd_model, cwd_metadata)
     } else if let (Some(ref rm), Some(ref rm_meta)) = (resource_model, resource_metadata) {
         if rm.exists() && rm_meta.exists() {
+            eprintln!("Using resource directory model path");
             (rm.clone(), rm_meta.clone())
         } else if let (Some(ref em), Some(ref em_meta)) = (exe_model, exe_metadata) {
             if em.exists() && em_meta.exists() {
+                eprintln!("Using executable directory model path");
                 (em.clone(), em_meta.clone())
             } else {
-                return Err("Model files not found. Please ensure model/model.onnx and model/metadata.json exist.".into());
+                return Err(format!(
+                    "Model files not found. Checked:\n  CWD: {:?}\n  Resource: {:?}\n  Exe dir: {:?}",
+                    cwd_model, rm, em
+                ).into());
             }
         } else {
-            return Err("Model files not found. Please ensure model/model.onnx and model/metadata.json exist.".into());
+            return Err(format!(
+                "Model files not found. Checked:\n  CWD: {:?}\n  Resource: {:?}",
+                cwd_model, rm
+            ).into());
         }
     } else if let (Some(ref em), Some(ref em_meta)) = (exe_model, exe_metadata) {
         if em.exists() && em_meta.exists() {
+            eprintln!("Using executable directory model path");
             (em.clone(), em_meta.clone())
         } else {
-            return Err("Model files not found. Please ensure model/model.onnx and model/metadata.json exist.".into());
+            return Err(format!(
+                "Model files not found. Checked:\n  CWD: {:?}\n  Exe dir: {:?}",
+                cwd_model, em
+            ).into());
         }
     } else {
-        return Err("Model files not found. Please ensure model/model.onnx and model/metadata.json exist.".into());
+        return Err(format!(
+            "Model files not found. Checked:\n  CWD: {:?}\n  Resource dir: {:?}",
+            cwd_model, resource_dir_result
+        ).into());
     };
 
     let model = DraftRecommendationModel::new(
