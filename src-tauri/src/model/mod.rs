@@ -83,6 +83,54 @@ impl DraftRecommendationModel {
         top_k: usize,
         player_role: Option<&str>,
     ) -> Result<Recommendations, Box<dyn std::error::Error>> {
+        // If a specific role is provided, get recommendations for that role
+        if player_role.is_some() {
+            return self.get_recommendations_for_role(draft_state, top_k, player_role);
+        }
+        
+        // No role specified - aggregate recommendations across all roles
+        let roles = vec!["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"];
+        let mut aggregated_scores: HashMap<u32, f32> = HashMap::new();
+        let mut total_win_prob = 0.0;
+        
+        // Run inference for each role and aggregate results
+        for role in &roles {
+            let result = self.get_recommendations_for_role(draft_state, self.metadata.num_champions, Some(role))?;
+            
+            // Aggregate champion scores
+            for rec in result.recommendations {
+                *aggregated_scores.entry(rec.champion_id).or_insert(0.0) += rec.score / roles.len() as f32;
+            }
+            
+            // Average win probability across all roles
+            total_win_prob += result.win_probability / roles.len() as f32;
+        }
+        
+        // Sort by aggregated score and take top-k
+        let mut sorted_recommendations: Vec<(u32, f32)> = aggregated_scores.into_iter().collect();
+        sorted_recommendations.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        
+        let recommendations: Vec<ChampionRecommendation> = sorted_recommendations
+            .into_iter()
+            .take(top_k)
+            .map(|(champion_id, score)| ChampionRecommendation {
+                champion_id,
+                score,
+            })
+            .collect();
+        
+        Ok(Recommendations {
+            recommendations,
+            win_probability: total_win_prob,
+        })
+    }
+    
+    fn get_recommendations_for_role(
+        &self,
+        draft_state: &DraftState,
+        top_k: usize,
+        player_role: Option<&str>,
+    ) -> Result<Recommendations, Box<dyn std::error::Error>> {
         // Extract features
         let features = self.extract_features(draft_state, player_role)?;
 
@@ -191,9 +239,19 @@ impl DraftRecommendationModel {
             .unwrap_or_default();
         
         // Collect pre-selected champions (hovered but not locked) from cells
+        // EXCLUDE the current player's prelock - only include teammates' prelocks
+        let player_cell_id = draft_state.local_player_cell_id;
+        
         let mut blue_preselected: Vec<u32> = Vec::new();
         if let Some(team) = blue_team {
             for cell in &team.cells {
+                // Skip the current player's cell
+                if let Some(player_id) = player_cell_id {
+                    if cell.cell_id == player_id {
+                        continue;
+                    }
+                }
+                
                 // Include pre-selected if not already locked
                 if let Some(selected_id) = cell.selected_champion_id {
                     if cell.champion_id.is_none() && selected_id > 0 {
@@ -206,6 +264,13 @@ impl DraftRecommendationModel {
         let mut red_preselected: Vec<u32> = Vec::new();
         if let Some(team) = red_team {
             for cell in &team.cells {
+                // Skip the current player's cell
+                if let Some(player_id) = player_cell_id {
+                    if cell.cell_id == player_id {
+                        continue;
+                    }
+                }
+                
                 // Include pre-selected if not already locked
                 if let Some(selected_id) = cell.selected_champion_id {
                     if cell.champion_id.is_none() && selected_id > 0 {
@@ -256,6 +321,7 @@ impl DraftRecommendationModel {
         features.push(pick_number as f32 / 5.0); // Pick number normalized
 
         // Role one-hot (5 dims)
+        // Get the role string from get_current_team_and_role
         let role_idx = self.metadata.roles.get(&role).copied().unwrap_or(0) as usize;
         for i in 0..5 {
             features.push(if i == role_idx { 1.0 } else { 0.0 });
@@ -315,13 +381,16 @@ impl DraftRecommendationModel {
             .collect();
         
         // Also exclude pre-selected champions (hovered but not locked)
+        // NOTE: This includes ALL prelocks (including the player's own)
+        // - Player's prelock is EXCLUDED from features (doesn't trigger re-computation)
+        // - But player's prelock is EXCLUDED from recommendations (we don't recommend what they're hovering)
         for team in &draft_state.teams {
             for cell in &team.cells {
                 // Add locked champions (already included above, but check anyway)
                 if let Some(champ_id) = cell.champion_id {
                     unavailable.insert(champ_id as u32);
                 }
-                // Add pre-selected champions
+                // Add pre-selected champions from ALL cells (including player's own)
                 if let Some(selected_id) = cell.selected_champion_id {
                     if selected_id > 0 {
                         unavailable.insert(selected_id as u32);
@@ -368,7 +437,7 @@ impl DraftRecommendationModel {
             }
         }
 
-        // Fallback: default to TOP
+        // Fallback to TOP (this function is only called when a role is being specified)
         (player_team, "TOP".to_string())
     }
     

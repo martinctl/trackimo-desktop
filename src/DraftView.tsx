@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import type { DraftState, Champion, Team, Cell } from "./types";
+import { useState } from "react";
+import type { DraftState, Champion } from "./types";
 import TeamView from "./components/draft/TeamView";
 import RecommendationsPanel from "./components/draft/RecommendationsPanel";
 import DraftHeader from "./components/draft/DraftHeader";
@@ -12,50 +12,13 @@ interface DraftViewProps {
   formatTime?: (seconds: number) => string;
 }
 
-const ROLES = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"];
-
 export default function DraftView({ draftState, champions, currentTimer, maxTimer, formatTime }: DraftViewProps) {
   // State for manually selected roles (cellId -> role)
   const [manualRoles, setManualRoles] = useState<Map<number, string>>(new Map());
   // Store the current player's cell ID from LCU (persists throughout the draft)
   const currentPlayerCellId = draftState?.local_player_cell_id ?? null;
 
-  // Auto-select an available role for the current player if they don't have one
-  useEffect(() => {
-    if (!draftState || currentPlayerCellId == null) return;
-
-    // Find the current player's cell
-    let currentCell: { team: Team; cell: Cell } | null = null;
-    for (const team of draftState.teams) {
-      const cell = team.cells.find(c => c.cell_id === currentPlayerCellId);
-      if (cell) {
-        currentCell = { team, cell };
-        break;
-      }
-    }
-
-    if (!currentCell) return;
-
-    // Check if player already has a role (assigned or manual)
-    const hasRole = currentCell.cell.assigned_position || manualRoles.get(currentPlayerCellId);
-    if (hasRole) return;
-
-    // Get roles taken by teammates
-    const takenRoles = currentCell.team.cells
-      .filter(c => c.cell_id !== currentPlayerCellId)
-      .map(c => c.assigned_position || manualRoles.get(c.cell_id))
-      .filter((role): role is string => role !== undefined && role !== "");
-
-    // Find first available role
-    const availableRole = ROLES.find(role => !takenRoles.includes(role));
-    if (availableRole) {
-      setManualRoles((prev) => {
-        const newMap = new Map(prev);
-        newMap.set(currentPlayerCellId, availableRole);
-        return newMap;
-      });
-    }
-  }, [draftState, currentPlayerCellId, manualRoles]);
+  // No auto-role assignment - let users pick their own role
 
   const getChampionCenteredImageUrl = (championId: number): string => {
     const champ = champions.get(championId);
