@@ -1,5 +1,5 @@
 {
-  "feature_dim": 701,
+  "feature_dim": 214,
   "num_champions": 171,
   "champion_mapping": {
     "idx_to_champion": {
@@ -353,6 +353,11 @@
     "hidden_dim": 256,
     "num_layers": 2,
     "use_lstm": false
+  },
+  "feature_config": {
+    "use_compact_features": true,
+    "use_synergy_features": true,
+    "use_meta_stats": true
   },
   "roles": {
     "TOP": 0,

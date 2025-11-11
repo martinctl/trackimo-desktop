@@ -14,6 +14,7 @@ struct Metadata {
     champion_mapping: ChampionMapping,
     #[allow(dead_code)]
     model_config: ModelConfig,
+    feature_config: FeatureConfig,
     roles: HashMap<String, u8>,
 }
 
@@ -33,6 +34,13 @@ struct ModelConfig {
     num_layers: usize,
     #[allow(dead_code)]
     use_lstm: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct FeatureConfig {
+    use_compact_features: bool,
+    use_synergy_features: bool,
+    use_meta_stats: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -224,6 +232,15 @@ impl DraftRecommendationModel {
     }
 
     fn extract_features(&self, draft_state: &DraftState, player_role: Option<&str>) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        // Check which feature extraction mode to use
+        if self.metadata.feature_config.use_compact_features {
+            self.extract_features_compact(draft_state, player_role)
+        } else {
+            self.extract_features_onehot(draft_state, player_role)
+        }
+    }
+
+    fn extract_features_compact(&self, draft_state: &DraftState, player_role: Option<&str>) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         let mut features = Vec::with_capacity(self.metadata.feature_dim);
 
         // Get team data
@@ -293,15 +310,42 @@ impl DraftRecommendationModel {
             .flat_map(|t| t.bans.iter().map(|b| b.champion_id as u32))
             .collect();
 
-        // Champion encodings (one-hot) - includes both locked and pre-selected
-        features.extend(self.encode_champion_list(&blue_picks));
-        features.extend(self.encode_champion_list(&red_picks));
-        features.extend(self.encode_champion_list(&all_bans));
+        // ===== COMPACT FEATURES =====
+        
+        // Blue team features (11 features)
+        features.push(blue_picks.len() as f32 / 5.0); // Team size
+        // Meta stats placeholders (3 features): avg win rate, avg pick rate, std win rate
+        features.push(0.5); // Default win rate
+        features.push(0.0); // Default pick rate
+        features.push(0.0); // Default std
+        // Team synergy (1 feature)
+        features.push(0.0); // Default synergy
+        // Role distribution (5 features) - placeholder
+        for _ in 0..5 {
+            features.push(0.0);
+        }
+        
+        // Red team features (11 features)
+        features.push(red_picks.len() as f32 / 5.0); // Team size
+        // Meta stats placeholders (3 features)
+        features.push(0.5); // Default win rate
+        features.push(0.0); // Default pick rate
+        features.push(0.0); // Default std
+        // Team synergy (1 feature)
+        features.push(0.0); // Default synergy
+        // Role distribution (5 features) - placeholder
+        for _ in 0..5 {
+            features.push(0.0);
+        }
+        
+        // Ban features (2 features)
+        features.push(all_bans.len() as f32 / 10.0); // Number of bans
+        features.push(0.0); // Default ban priority
 
         // Calculate step (total picks + bans completed) - use locked picks for step count
         let step = blue_locked.len() + red_locked.len() + all_bans.len();
 
-        // Draft progress - use locked picks for progress
+        // Draft progress (3 features)
         features.push(step as f32 / 10.0); // Step normalized
         features.push(blue_locked.len() as f32 / 5.0); // Blue progress
         features.push(red_locked.len() as f32 / 5.0); // Red progress
@@ -309,25 +353,24 @@ impl DraftRecommendationModel {
         // Determine current team and role (use player_role if provided)
         let (current_team, role) = self.get_current_team_and_role(draft_state, player_role);
 
-        // Team indicator
+        // Team indicator (1 feature)
         features.push(if current_team == 100 { 1.0 } else { 0.0 });
 
-        // Role features
+        // Role features (9 features)
         let pick_number = if current_team == 100 {
             blue_picks.len() + 1
         } else {
             red_picks.len() + 1
         };
-        features.push(pick_number as f32 / 5.0); // Pick number normalized
+        features.push(pick_number as f32 / 5.0); // Pick number normalized (1 feature)
 
-        // Role one-hot (5 dims)
-        // Get the role string from get_current_team_and_role
+        // Role one-hot (5 features)
         let role_idx = self.metadata.roles.get(&role).copied().unwrap_or(0) as usize;
         for i in 0..5 {
             features.push(if i == role_idx { 1.0 } else { 0.0 });
         }
 
-        // Pick phase one-hot (3 dims)
+        // Pick phase one-hot (3 features)
         let phase = if pick_number <= 2 {
             [1.0, 0.0, 0.0] // Early
         } else if pick_number <= 4 {
@@ -337,16 +380,164 @@ impl DraftRecommendationModel {
         };
         features.extend_from_slice(&phase);
 
-        // Available champions mask (duplicate, can be zeros)
-        features.extend(vec![0.0; self.metadata.num_champions]);
+        // Available champions mask (num_champions features)
+        features.extend(self.get_available_champions_mask(draft_state));
 
-        // Meta statistics (simplified - set to defaults)
-        features.extend_from_slice(&[0.5, 0.5, 0.0, 0.0]); // win rates, pick rates
+        // Meta statistics (4 features) - if enabled
+        if self.metadata.feature_config.use_meta_stats {
+            features.extend_from_slice(&[0.5, 0.5, 0.0, 0.0]); // win rates, pick rates
+        }
 
-        // Ensure we have exactly feature_dim features
+        // Synergy features (4 features) - if enabled
+        if self.metadata.feature_config.use_synergy_features {
+            // Blue synergy, Red synergy, Counter score, Synergy advantage
+            features.extend_from_slice(&[0.0, 0.0, 0.0, 0.0]);
+        }
+
+        // Verify feature dimension
         if features.len() != self.metadata.feature_dim {
             return Err(format!(
-                "Feature dimension mismatch: expected {}, got {}",
+                "Feature dimension mismatch (compact): expected {}, got {}",
+                self.metadata.feature_dim,
+                features.len()
+            ).into());
+        }
+
+        Ok(features)
+    }
+
+    fn extract_features_onehot(&self, draft_state: &DraftState, player_role: Option<&str>) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let mut features = Vec::with_capacity(self.metadata.feature_dim);
+
+        // Get team data
+        let blue_team = draft_state.teams.iter().find(|t| t.team_id == 100);
+        let red_team = draft_state.teams.iter().find(|t| t.team_id == 200);
+
+        // Collect locked picks
+        let blue_locked: Vec<u32> = blue_team
+            .map(|t| t.picks.iter().map(|p| p.champion_id as u32).collect())
+            .unwrap_or_default();
+        let red_locked: Vec<u32> = red_team
+            .map(|t| t.picks.iter().map(|p| p.champion_id as u32).collect())
+            .unwrap_or_default();
+        
+        // Collect pre-selected champions (hovered but not locked) from cells
+        // EXCLUDE the current player's prelock - only include teammates' prelocks
+        let player_cell_id = draft_state.local_player_cell_id;
+        
+        let mut blue_preselected: Vec<u32> = Vec::new();
+        if let Some(team) = blue_team {
+            for cell in &team.cells {
+                // Skip the current player's cell
+                if let Some(player_id) = player_cell_id {
+                    if cell.cell_id == player_id {
+                        continue;
+                    }
+                }
+                
+                // Include pre-selected if not already locked
+                if let Some(selected_id) = cell.selected_champion_id {
+                    if cell.champion_id.is_none() && selected_id > 0 {
+                        blue_preselected.push(selected_id as u32);
+                    }
+                }
+            }
+        }
+        
+        let mut red_preselected: Vec<u32> = Vec::new();
+        if let Some(team) = red_team {
+            for cell in &team.cells {
+                // Skip the current player's cell
+                if let Some(player_id) = player_cell_id {
+                    if cell.cell_id == player_id {
+                        continue;
+                    }
+                }
+                
+                // Include pre-selected if not already locked
+                if let Some(selected_id) = cell.selected_champion_id {
+                    if cell.champion_id.is_none() && selected_id > 0 {
+                        red_preselected.push(selected_id as u32);
+                    }
+                }
+            }
+        }
+        
+        // Combine locked and pre-selected for feature encoding
+        let mut blue_picks = blue_locked.clone();
+        blue_picks.extend_from_slice(&blue_preselected);
+        
+        let mut red_picks = red_locked.clone();
+        red_picks.extend_from_slice(&red_preselected);
+        
+        let all_bans: Vec<u32> = draft_state
+            .teams
+            .iter()
+            .flat_map(|t| t.bans.iter().map(|b| b.champion_id as u32))
+            .collect();
+
+        // ===== ONE-HOT FEATURES =====
+        
+        // Champion encodings (one-hot) - includes both locked and pre-selected
+        features.extend(self.encode_champion_list(&blue_picks));
+        features.extend(self.encode_champion_list(&red_picks));
+        features.extend(self.encode_champion_list(&all_bans));
+
+        // Calculate step (total picks + bans completed) - use locked picks for step count
+        let step = blue_locked.len() + red_locked.len() + all_bans.len();
+
+        // Draft progress (3 features)
+        features.push(step as f32 / 10.0); // Step normalized
+        features.push(blue_locked.len() as f32 / 5.0); // Blue progress
+        features.push(red_locked.len() as f32 / 5.0); // Red progress
+
+        // Determine current team and role (use player_role if provided)
+        let (current_team, role) = self.get_current_team_and_role(draft_state, player_role);
+
+        // Team indicator (1 feature)
+        features.push(if current_team == 100 { 1.0 } else { 0.0 });
+
+        // Role features (9 features)
+        let pick_number = if current_team == 100 {
+            blue_picks.len() + 1
+        } else {
+            red_picks.len() + 1
+        };
+        features.push(pick_number as f32 / 5.0); // Pick number normalized
+
+        // Role one-hot (5 features)
+        let role_idx = self.metadata.roles.get(&role).copied().unwrap_or(0) as usize;
+        for i in 0..5 {
+            features.push(if i == role_idx { 1.0 } else { 0.0 });
+        }
+
+        // Pick phase one-hot (3 features)
+        let phase = if pick_number <= 2 {
+            [1.0, 0.0, 0.0] // Early
+        } else if pick_number <= 4 {
+            [0.0, 1.0, 0.0] // Mid
+        } else {
+            [0.0, 0.0, 1.0] // Late
+        };
+        features.extend_from_slice(&phase);
+
+        // Available champions mask (num_champions features)
+        features.extend(self.get_available_champions_mask(draft_state));
+
+        // Meta statistics (4 features) - if enabled
+        if self.metadata.feature_config.use_meta_stats {
+            features.extend_from_slice(&[0.5, 0.5, 0.0, 0.0]); // win rates, pick rates
+        }
+
+        // Synergy features (4 features) - if enabled (shouldn't be enabled without compact usually)
+        if self.metadata.feature_config.use_synergy_features {
+            features.extend_from_slice(&[0.0, 0.0, 0.0, 0.0]);
+        }
+
+        // Verify feature dimension
+        if features.len() != self.metadata.feature_dim {
+            return Err(format!(
+                "Feature dimension mismatch (one-hot): expected {}, got {}",
                 self.metadata.feature_dim,
                 features.len()
             ).into());
